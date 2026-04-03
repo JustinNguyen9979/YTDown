@@ -33,6 +33,27 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.loadConfig()
+	
+	// Check binaries after a short delay to ensure UI is ready
+	go func() {
+		status := a.CheckBinaries()
+		if !status["ytdlp"].(bool) {
+			runtime.EventsEmit(ctx, "binary-error", "yt-dlp is missing. Please install it with: brew install yt-dlp")
+		} else if !status["ffmpeg"].(bool) {
+			runtime.EventsEmit(ctx, "binary-warning", "ffmpeg is missing. Some formats (like MP3) will fail.")
+		}
+	}()
+}
+
+// CheckBinaries checks if yt-dlp and ffmpeg are installed
+func (a *App) CheckBinaries() map[string]interface{} {
+	ytdlpPath := getResourcePath("yt-dlp")
+	ffmpegPath := getResourcePath("ffmpeg")
+
+	return map[string]interface{}{
+		"ytdlp":  ytdlpPath != "",
+		"ffmpeg": ffmpegPath != "",
+	}
 }
 
 // shutdown is called at application termination
@@ -211,4 +232,101 @@ func (a *App) GetDefaultSavePath() string {
 		return "/Users/" + os.Getenv("USER") + "/Downloads"
 	}
 	return filepath.Join(usr.HomeDir, "Downloads")
+}
+
+// SelectFiles opens native file picker for multiple files
+func (a *App) SelectFiles(fileType string) []string {
+	pattern := "*.*"
+	if fileType == "video" {
+		pattern = "*.mp4;*.mkv;*.avi;*.mov;*.wmv;*.flv;*.webm"
+	} else if fileType == "image" {
+		pattern = "*.jpg;*.jpeg;*.png;*.webp;*.bmp;*.gif;*.heic;*.avif"
+	}
+
+	// Use OpenMultipleFilesDialog to allow selecting more than one file
+	multipleFiles, err := runtime.OpenMultipleFilesDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Select Files to Compress",
+		Filters: []runtime.FileFilter{
+			{
+				DisplayName: fileType + " Files",
+				Pattern:     pattern,
+			},
+		},
+	})
+	if err != nil {
+		return []string{}
+	}
+
+	return multipleFiles
+}
+
+// SelectFolder opens native folder picker and scans for files
+func (a *App) SelectFolder(fileType string) []string {
+	dir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Select Folder to Scan",
+	})
+	if err != nil || dir == "" {
+		return []string{}
+	}
+
+	var extensions []string
+	if fileType == "video" {
+		extensions = []string{".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"}
+	} else if fileType == "image" {
+		extensions = []string{".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".heic", ".avif"}
+	}
+
+	var files []string
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return []string{}
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		for _, e := range extensions {
+			if ext == e {
+				files = append(files, filepath.Join(dir, entry.Name()))
+				break
+			}
+		}
+	}
+
+	return files
+}
+
+// StartCompression starts compressing a list of files
+func (a *App) StartCompression(files []string, options CompressionOptions) string {
+	if len(files) == 0 {
+		return "Error: No files selected"
+	}
+
+	go func() {
+		for i, file := range files {
+			runtime.EventsEmit(a.ctx, "compression-status", map[string]interface{}{
+				"index":  i,
+				"status": "processing",
+			})
+
+			err := CompressFile(a.ctx, file, options, i)
+			
+			if err != nil {
+				runtime.EventsEmit(a.ctx, "compression-error", map[string]interface{}{
+					"index": i,
+					"error": err.Error(),
+				})
+			} else {
+				runtime.EventsEmit(a.ctx, "compression-status", map[string]interface{}{
+					"index":  i,
+					"status": "done",
+				})
+			}
+		}
+		runtime.EventsEmit(a.ctx, "compression-complete", "All files processed")
+	}()
+
+	return "Compression started"
 }

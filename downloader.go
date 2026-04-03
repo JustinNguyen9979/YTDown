@@ -69,6 +69,10 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 	// Read progress output
 	scanner := bufio.NewScanner(stdout)
 	
+	// Set a larger buffer for the scanner (up to 1MB) to handle long output lines
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+	
 	// Custom split function to handle both \n and \r
 	scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 		if atEOF && len(data) == 0 {
@@ -137,13 +141,23 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 		}
 	}
 
+	if err := scanner.Err(); err != nil {
+		println("[DL] scanner error:", err.Error())
+	}
+
 	// Also read stderr for error messages
+	var stderrOutput strings.Builder
 	errScanner := bufio.NewScanner(stderr)
 	for errScanner.Scan() {
-		println("[DL] stderr:", errScanner.Text())
+		line := errScanner.Text()
+		println("[DL] stderr:", line)
+		stderrOutput.WriteString(line + "\n")
 	}
 
 	if err := cmd.Wait(); err != nil {
+		if stderrOutput.Len() > 0 {
+			return fmt.Errorf("download failed: %s", stderrOutput.String())
+		}
 		return fmt.Errorf("download failed: %v", err)
 	}
 
@@ -177,6 +191,7 @@ func buildDownloadArgs(format, quality, savePath, ffmpegPath string) []string {
 
 	// Common arguments
 	args = append(args,
+		"--no-playlist",
 		"--concurrent-fragments", strconv.Itoa(runtimepkg.NumCPU()),
 		"-o", filepath.Join(savePath, "%(title)s.%(ext)s"),
 	)

@@ -29,20 +29,25 @@
     }
 }
 
-body {
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
+html, body {
+    margin: 0;
+    padding: 0;
     overflow: hidden;
+    height: auto !important; /* Không cho phép giãn theo cửa sổ */
 }
 
 .container {
     width: 100%;
-    height: 100vh;
     display: flex;
     flex-direction: column;
-    padding: 20px;
-    overflow-y: auto;
+    padding: 20px 20px 30px 20px;
+    height: auto !important; /* Luôn ôm sát nội dung */
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
 }
 
 /* Header */
@@ -237,7 +242,7 @@ select:focus {
     color: var(--text-secondary);
     font-size: 12px;
     font-family: "Monaco", monospace;
-    cursor: not-allowed;
+    cursor: text;
 }
 
 .browse-btn {
@@ -396,41 +401,63 @@ select:focus {
 /* Batch Progress Table */
 .batch-progress {
     margin-top: 12px;
+    max-height: 400px; /* Giới hạn chiều cao */
+    overflow-y: auto;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+}
+
+/* Chỉ hiện border khi có dữ liệu */
+.batch-progress:has(tbody tr) {
+    border-color: var(--border-color);
 }
 
 .batch-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 12px;
-    margin-bottom: 10px;
+    margin-bottom: 0px; /* Giảm margin để khít container */
 }
 
 .batch-table thead {
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border-color);
+    position: sticky;
+    top: 0;
+    z-index: 10;
 }
 
-.batch-table th {
-    padding: 10px;
+.batch-table th, .batch-table td {
+    padding: 12px 10px;
     text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+/* Định nghĩa độ rộng cụ thể cho từng cột */
+.batch-table th:nth-child(1), .batch-table td:nth-child(1) { width: 35px; min-width: 35px; } /* # */
+.batch-table th:nth-child(2), .batch-table td:nth-child(2) { 
+    width: 100%; /* Cột Title tự giãn rộng nhất có thể */
+    max-width: 0; 
+    text-overflow: ellipsis;
+}
+.batch-table th:nth-child(3), .batch-table td:nth-child(3) { 
+    width: 130px; /* Cột Status đủ rộng cho 'Downloading' */
+    min-width: 130px;
+} 
+.batch-table th:nth-child(4), .batch-table td:nth-child(4) { 
+    width: 120px; 
+    min-width: 120px;
+} /* Progress */
+
+.batch-table th {
     font-weight: 600;
     color: var(--text-secondary);
     text-transform: uppercase;
     font-size: 11px;
     letter-spacing: 0.5px;
-}
-
-.batch-table tr {
-    border-bottom: 1px solid var(--border-color);
-    transition: background 0.2s ease;
-}
-
-.batch-table tbody tr:hover {
-    background: rgba(255, 255, 255, 0.05);
-}
-
-.batch-table td {
-    padding: 12px 10px;
+    background: var(--bg-primary);
 }
 
 .batch-table .status-icon {
@@ -501,13 +528,55 @@ select:focus {
     background: rgba(255, 255, 255, 0.3);
 }
 
-/* Responsive */
-@media (max-width: 600px) {
-    .settings {
-        grid-template-columns: 1fr;
-    }
+/* Compress Tab Specific */
+.compress-controls-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 100px; /* Cột nút Select chỉ rộng 100px */
+    gap: 12px;
+    align-items: flex-start;
+}
 
-    .header h1 {
-        font-size: 20px;
-    }
+#selectFilesBtn {
+    height: 38px;
+    padding: 0 12px;
+    font-size: 13px;
+    width: 100%;
+}
+
+.file-list-container {
+    max-height: 400px; /* Tăng giới hạn lên 400px cho đồng bộ */
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+}
+
+#compress .settings {
+    margin-top: 10px;
+}
+
+.video-only, .image-only {
+    display: none;
+}
+
+/* Scrollbar mỏng, tinh tế chỉ dành cho các list này */
+.batch-progress::-webkit-scrollbar,
+.file-list-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.batch-progress::-webkit-scrollbar-track,
+.file-list-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.batch-progress::-webkit-scrollbar-thumb,
+.file-list-container::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+}
+
+.batch-progress::-webkit-scrollbar-thumb:hover,
+.file-list-container::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-blue);
 }

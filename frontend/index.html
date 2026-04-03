@@ -15,73 +15,17 @@
 
         <!-- Tab Switcher -->
         <div class="tabs">
-            <button type="button" class="tab-btn active" data-tab="single">Single</button>
-            <button type="button" class="tab-btn" data-tab="batch">Batch</button>
+            <button type="button" class="tab-btn active" data-tab="batch">Download</button>
+            <button type="button" class="tab-btn" data-tab="compress">Compress</button>
         </div>
 
-        <!-- Single Tab -->
-        <div id="single" class="tab-content active">
-            <div class="input-group">
-                <input type="text" id="singleUrl" class="url-input" placeholder="Paste video URL here..." />
-                <button type="button" class="clear-btn" id="clearSingle">✕</button>
-            </div>
-
-            <div class="settings">
-                <div class="setting-row">
-                    <label>Format:</label>
-                    <select id="formatSelect">
-                        <option value="MP4">MP4</option>
-                        <option value="MP3">MP3</option>
-                    </select>
-                </div>
-
-                <div class="setting-row" id="qualityRow">
-                    <label>Quality:</label>
-                    <select id="qualitySelect">
-                        <option value="Best Quality">Best Quality</option>
-                        <option value="1080p">1080p</option>
-                        <option value="720p">720p</option>
-                        <option value="480p">480p</option>
-                        <option value="360p">360p</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="save-path">
-                <label>Save to:</label>
-                <div class="path-group">
-                    <input type="text" id="savePath" readonly class="path-input" />
-                    <button type="button" class="browse-btn" id="browseBtn">Browse</button>
-                </div>
-            </div>
-
-            <button type="button" class="download-btn" id="startDownloadBtn" disabled>▶ Start Download</button>
-
-            <!-- Progress Section -->
-            <div class="progress-section">
-                <div class="video-info">
-                    <span id="videoTitle">-</span>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progressFill"></div>
-                </div>
-                <div class="progress-text">
-                    <span id="progressPercent">0%</span> • 
-                    <span id="progressSpeed">0 MB/s</span> • 
-                    <span id="progressETA">—</span>
-                </div>
-                <div class="result-message" id="resultMessage"></div>
-            </div>
-        </div>
-
-        <!-- Batch Tab -->
-        <div id="batch" class="tab-content">
+        <!-- Download Tab -->
+        <div id="batch" class="tab-content active">
             <div class="batch-buttons">
-                <button type="button" id="pasteBtn" class="action-btn">Paste</button>
                 <button type="button" id="clearBatchBtn" class="action-btn secondary">Clear</button>
             </div>
 
-            <textarea id="batchUrls" class="batch-input" placeholder="Paste one URL per line..."></textarea>
+            <textarea id="batchUrls" class="batch-input" placeholder="Paste video URLs here (one per line)..."></textarea>
 
             <div class="settings">
                 <div class="setting-row">
@@ -107,14 +51,14 @@
             <div class="save-path">
                 <label>Save to:</label>
                 <div class="path-group">
-                    <input type="text" id="batchSavePath" readonly class="path-input" />
+                    <input type="text" id="batchSavePath" class="path-input" />
                     <button type="button" class="browse-btn" id="browseBatchBtn">Browse</button>
                 </div>
             </div>
 
-            <button type="button" class="download-btn" id="startBatchBtn">▶ Start Batch Download</button>
+            <button type="button" class="download-btn" id="startBatchBtn">▶ Start Download</button>
 
-            <!-- Batch Progress -->
+            <!-- Download Progress -->
             <div class="batch-progress">
                 <table class="batch-table" id="batchTable">
                     <thead>
@@ -130,11 +74,75 @@
                 <div class="batch-summary" id="batchSummary"></div>
             </div>
         </div>
+
+        <!-- Compress Tab -->
+        <div id="compress" class="tab-content">
+            <div class="compress-controls-row">
+                <div class="setting-row">
+                    <label>Type:</label>
+                    <select id="compressType">
+                        <option value="video">Video</option>
+                        <option value="image">Image</option>
+                    </select>
+                </div>
+                <div class="setting-row">
+                    <label>Selection:</label>
+                    <select id="selectionMode">
+                        <option value="file">Files</option>
+                        <option value="folder">Folder</option>
+                    </select>
+                </div>
+                <div class="setting-row">
+                    <label>&nbsp;</label>
+                    <button type="button" id="selectFilesBtn" class="browse-btn">📁 Select</button>
+                </div>
+            </div>
+
+            <div class="file-list-container" style="margin-top: 10px;">
+                <table class="batch-table" id="compressTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>File Name</th>
+                            <th>Status</th>
+                            <th>Progress</th>
+                        </tr>
+                    </thead>
+                    <tbody id="compressTableBody"></tbody>
+                </table>
+            </div>
+
+            <div class="settings" style="margin-top: 16px;">
+                <div class="setting-row">
+                    <label>Quality Level:</label>
+                    <select id="compressQuality">
+                        <option value="medium">Medium (Balanced)</option>
+                        <option value="high">High (Keep Quality)</option>
+                        <option value="low">Low (Smallest Size)</option>
+                    </select>
+                </div>
+
+                <div class="setting-row">
+                    <label>Output Format:</label>
+                    <select id="compressFormat">
+                        <!-- Dynamic options -->
+                    </select>
+                </div>
+            </div>
+
+            <div class="save-path">
+                <label>Save to:</label>
+                <div class="path-group">
+                    <input type="text" id="compressSavePath" class="path-input" />
+                    <button type="button" class="browse-btn" id="browseCompressBtn">Browse</button>
+                </div>
+                <small style="color: var(--text-secondary); font-size: 10px; margin-top: 4px; opacity: 0.7;">* Files will be saved in a 'Compressed' folder within this path.</small>
+            </div>
+
+            <button type="button" class="download-btn" id="startCompressBtn" disabled>⚡ Start Compression</button>
+        </div>
     </div>
 
-    <!-- Wails Runtime (injected in dev mode via DevServer) -->
-    <!-- This ensures window.go and window.runtime are available before app.js runs -->
-    
     <script src="app.js"></script>
 </body>
 </html>

@@ -18,11 +18,11 @@ func main() {
 	err := wails.Run(&options.App{
 		Title:      "YTDown",
 		Width:      700,
-		Height:     560,
+		Height:     450, // Initial height
 		MinWidth:   700,
-		MinHeight:  560,
+		MinHeight:  300, // Very low minimum to allow hugging
 		MaxWidth:   700,
-		MaxHeight:  560,
+		MaxHeight:  900, // Sufficient maximum for long lists
 		OnStartup:  app.startup,
 		OnShutdown: app.shutdown,
 		AssetServer: &assetserver.Options{

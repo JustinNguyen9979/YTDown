@@ -8,12 +8,28 @@ const state = {
     savePath: '',
     currentFormat: 'MP4',
     currentQuality: 'Best Quality',
-    wailsReady: false  // Track if Wails is ready
+    wailsReady: false,
+    selectedCompressFiles: [] // New state
 };
 
 // Wait counter to prevent infinite loops
 let wailsWaitAttempts = 0;
 const MAX_WAILS_WAIT_ATTEMPTS = 100; // 10 seconds max (100 * 100ms)
+
+function truncateMiddle(fullStr, strLen, separator) {
+    if (fullStr.length <= strLen) return fullStr;
+    
+    separator = separator || '...';
+    
+    var sepLen = separator.length,
+        charsToShow = strLen - sepLen,
+        frontChars = Math.ceil(charsToShow / 2),
+        backChars = Math.floor(charsToShow / 2);
+    
+    return fullStr.substr(0, frontChars) + 
+           separator + 
+           fullStr.substr(fullStr.length - backChars);
+}
 
 // Initialize app
 if (document.readyState === 'loading') {
@@ -61,6 +77,7 @@ async function initializeApp() {
             state.savePath = path;
             document.getElementById('savePath').value = path;
             document.getElementById('batchSavePath').value = path;
+            document.getElementById('compressSavePath').value = path; // NEW
             console.log('[BOOT] Default path set:', path);
         } catch (err) {
             console.error('[BOOT] Error loading path:', err);
@@ -70,16 +87,62 @@ async function initializeApp() {
         state.savePath = '/Downloads'; // Fallback path display
         document.getElementById('savePath').value = '[Wails not ready]';
         document.getElementById('batchSavePath').value = '[Wails not ready]';
+        document.getElementById('compressSavePath').value = '[Wails not ready]'; // NEW
     }
     
     // Setup event listeners
     console.log('[BOOT] Setting up event listeners...');
     setupTabs();
-    setupSingleTab();
     setupBatchTab();
+    setupCompressTab();
     setupGoEvents();
     
+    // Add dynamic window resizing (Auto-hug)
+    setupWindowAutoHug();
+    
     console.log('[BOOT] Initialization complete!');
+}
+
+let lastSetHeight = 0;
+
+function setupWindowAutoHug() {
+    if (typeof window === 'undefined' || !window.runtime || !window.runtime.WindowSetSize) return;
+
+    const updateHeight = () => {
+        const container = document.querySelector('.container');
+        if (!container) return;
+
+        // Use getBoundingClientRect for sub-pixel accuracy or offsetHeight
+        const contentHeight = Math.ceil(container.getBoundingClientRect().height);
+        
+        // MacOS/Windows title bar offset + small bottom air
+        const windowHeight = contentHeight + 40; 
+        
+        // Prevent infinite loop: Only resize if the change is more than 5px
+        if (contentHeight > 200 && Math.abs(windowHeight - lastSetHeight) > 5) {
+            console.log('[UI] Auto-hugging with gap to:', windowHeight);
+            lastSetHeight = windowHeight;
+            window.runtime.WindowSetSize(700, windowHeight);
+        }
+    };
+
+    // Use ResizeObserver for automatic detection
+    const container = document.querySelector('.container');
+    if (container) {
+        const resizeObserver = new ResizeObserver(() => {
+            // Use requestAnimationFrame to ensure we measure after layout is ready
+            requestAnimationFrame(updateHeight);
+        });
+        resizeObserver.observe(container);
+    }
+
+    // Force update when tabs change
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            // Wait for tab animation to finish before measuring
+            setTimeout(updateHeight, 100); 
+        });
+    });
 }
 
 // Setup Wails events
@@ -94,25 +157,70 @@ function setupGoEvents() {
             });
             
             window.runtime.EventsOn('video-title', (title) => {
+                // Batch title update: titles are emitted sequentially as they start
+                // But we don't always know which index it is.
+                // However, the progress-update events carry the index.
+                // For simplicity, we can also look for currently 'downloading' rows without a proper title.
                 console.log('[EVENTS] video-title:', title);
-                // Remove quotes if any
-                const cleanTitle = title.replace(/^["']|["']$/g, '');
-                document.getElementById('videoTitle').textContent = cleanTitle;
+                const rows = document.querySelectorAll('#batchTableBody tr');
+                rows.forEach(row => {
+                    const statusCell = row.querySelector('td:nth-child(3)');
+                    const titleCell = row.querySelector('td:nth-child(2)');
+                    if (statusCell && statusCell.innerText.includes('Downloading') && titleCell && titleCell.innerText.startsWith('http')) {
+                         titleCell.innerText = truncateMiddle(title.replace(/^["']|["']$/g, ''), 40);
+                         titleCell.title = title; // Show full title on hover
+                    }
+                });
             });
             
-            window.runtime.EventsOn('download-complete', (path) => {
-                console.log('[EVENTS] download-complete');
-                showSuccess('✅ Download complete!');
+            window.runtime.EventsOn('binary-error', (error) => {
+                showError('⚠️ Missing Tool: ' + error);
             });
-            
-            window.runtime.EventsOn('download-error', (error) => {
-                console.log('[EVENTS] download-error:', error);
-                showError('❌ ' + error);
+
+            window.runtime.EventsOn('binary-warning', (warning) => {
+                console.warn('[EVENTS] binary-warning:', warning);
+                // Just log it or show a subtle message
+                showError('⚠️ Warning: ' + warning);
+            });
+
+            window.runtime.EventsOn('batch-complete', (results) => {
+                console.log('[EVENTS] batch-complete:', results);
+                const btn = document.getElementById('startBatchBtn');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '▶ Start Download';
+                }
             });
             
             window.runtime.EventsOn('batch-status', (data) => {
                 console.log('[EVENTS] batch-status:', data);
                 updateBatchStatus(data.index, data.status);
+            });
+
+            // New compression events
+            window.runtime.EventsOn('compression-status', (data) => {
+                console.log('[EVENTS] compression-status:', data);
+                updateCompressStatus(data.index, data.status);
+            });
+
+            window.runtime.EventsOn('compression-progress', (data) => {
+                console.log('[EVENTS] compression-progress:', data);
+                updateCompressProgress(data.index, data.status, data.message);
+            });
+
+            window.runtime.EventsOn('compression-error', (data) => {
+                console.error('[EVENTS] compression-error:', data);
+                updateCompressError(data.index, data.error);
+            });
+
+            window.runtime.EventsOn('compression-complete', (msg) => {
+                console.log('[EVENTS] compression-complete:', msg);
+                const btn = document.getElementById('startCompressBtn');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '⚡ Start Compression';
+                }
+                // Success message removed as per request
             });
             
             console.log('[EVENTS] Event listeners registered');
@@ -128,169 +236,28 @@ function setupGoEvents() {
 function setupTabs() {
     console.log('[TABS] Setting up Tab Switching...');
     
-    const singleBtn = document.querySelector('[data-tab="single"]');
     const batchBtn = document.querySelector('[data-tab="batch"]');
-    const singleTab = document.getElementById('single');
+    const compressBtn = document.querySelector('[data-tab="compress"]');
     const batchTab = document.getElementById('batch');
+    const compressTab = document.getElementById('compress');
     
-    console.log('[TABS] Elements found:', {
-        singleBtn: !!singleBtn,
-        batchBtn: !!batchBtn,
-        singleTab: !!singleTab,
-        batchTab: !!batchTab
-    });
-    
-    if (!singleBtn || !batchBtn) {
+    if (!batchBtn || !compressBtn) {
         console.error('[TABS] Buttons not found!');
         return;
     }
     
-    singleBtn.addEventListener('click', function(e) {
-        console.log('[TABS] Single button clicked');
-        e.preventDefault();
-        singleBtn.classList.add('active');
-        batchBtn.classList.remove('active');
-        singleTab.classList.add('active');
-        batchTab.classList.remove('active');
-    });
-    
-    batchBtn.addEventListener('click', function(e) {
-        console.log('[TABS] Batch button clicked');
-        e.preventDefault();
-        batchBtn.classList.add('active');
-        singleBtn.classList.remove('active');
-        batchTab.classList.add('active');
-        singleTab.classList.remove('active');
-    });
-    
-    console.log('[TABS] Tab setup complete');
-}
-
-// === SINGLE TAB ===
-function setupSingleTab() {
-    console.log('[SINGLE] Setting up Single Tab...');
-    
-    // Get all elements
-    const urlInput = document.getElementById('singleUrl');
-    const clearBtn = document.getElementById('clearSingle');
-    const browseBtn = document.getElementById('browseBtn');
-    const startBtn = document.getElementById('startDownloadBtn');
-    const formatSelect = document.getElementById('formatSelect');
-    const qualitySelect = document.getElementById('qualitySelect');
-    const qualityRow = document.getElementById('qualityRow');
-    
-    console.log('[SINGLE] Elements found:', {
-        urlInput: !!urlInput,
-        clearBtn: !!clearBtn,
-        browseBtn: !!browseBtn,
-        startBtn: !!startBtn,
-        formatSelect: !!formatSelect,
-        qualitySelect: !!qualitySelect
-    });
-    
-    if (!urlInput || !clearBtn || !browseBtn || !startBtn) {
-        console.error('[SINGLE] Missing critical elements!');
-        return;
+    function switchTab(tab) {
+        [batchBtn, compressBtn].forEach(b => b.classList.remove('active'));
+        [batchTab, compressTab].forEach(t => t.classList.remove('active'));
+        
+        document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+        document.getElementById(tab).classList.add('active');
     }
     
-    // Clear button
-    clearBtn.addEventListener('click', function(e) {
-        console.log('[SINGLE] Clear button clicked');
-        e.preventDefault();
-        urlInput.value = '';
-        startBtn.disabled = true;
-        document.getElementById('videoTitle').textContent = '-';
-        clearProgress();
-    });
+    batchBtn.addEventListener('click', () => switchTab('batch'));
+    compressBtn.addEventListener('click', () => switchTab('compress'));
     
-    // Browse button
-    browseBtn.addEventListener('click', async function(e) {
-        console.log('[SINGLE] Browse button clicked');
-        e.preventDefault();
-        
-        if (!state.wailsReady) {
-            console.error('[SINGLE] Wails not ready yet');
-            showError('App is still initializing... Please try again in a moment');
-            return;
-        }
-        
-        try {
-            if (!window.go || !window.go.main || !window.go.main.App) {
-                throw new Error('Wails Go bindings unavailable');
-            }
-            const path = await window.go.main.App.OpenFolderDialog();
-            if (path) {
-                console.log('[SINGLE] Path selected:', path);
-                document.getElementById('savePath').value = path;
-                state.savePath = path;
-            }
-        } catch (err) {
-            console.error('[SINGLE] Browse error:', err);
-            showError('Error: ' + err.message);
-        }
-    });
-    
-    // URL input - enable/disable Start button
-    urlInput.addEventListener('input', function(e) {
-        const hasText = e.target.value.trim().length > 0;
-        startBtn.disabled = !hasText;
-        console.log('[SINGLE] URL input changed, Start button disabled:', startBtn.disabled);
-    });
-    
-    // Format select
-    formatSelect.addEventListener('change', function(e) {
-        state.currentFormat = e.target.value;
-        qualityRow.style.display = (e.target.value === 'MP3') ? 'none' : 'flex';
-        console.log('[SINGLE] Format changed to:', state.currentFormat);
-    });
-    
-    // Quality select
-    qualitySelect.addEventListener('change', function(e) {
-        state.currentQuality = e.target.value;
-        console.log('[SINGLE] Quality changed to:', state.currentQuality);
-    });
-    
-    // Start download button
-    startBtn.addEventListener('click', async function(e) {
-        console.log('[SINGLE] Start button clicked');
-        e.preventDefault();
-        
-        if (!state.wailsReady) {
-            console.error('[SINGLE] Wails not ready yet');
-            showError('App is still initializing... Please try again in a moment');
-            return;
-        }
-        
-        const url = urlInput.value.trim();
-        if (!url) {
-            showError('Please enter a URL');
-            return;
-        }
-        
-        startBtn.disabled = true;
-        startBtn.textContent = 'Downloading...';
-        clearProgress();
-        
-        try {
-            if (!window.go || !window.go.main || !window.go.main.App) {
-                throw new Error('Wails Go bindings unavailable');
-            }
-            const result = await window.go.main.App.StartDownload(
-                url,
-                state.currentFormat,
-                state.currentQuality,
-                state.savePath
-            );
-            console.log('[SINGLE] Download started:', result);
-        } catch (err) {
-            console.error('[SINGLE] Download error:', err);
-            showError('Error: ' + err.message);
-            startBtn.disabled = false;
-            startBtn.textContent = '▶ Start Download';
-        }
-    });
-    
-    console.log('[SINGLE] Setup complete');
+    console.log('[TABS] Tab setup complete');
 }
 
 // === BATCH TAB ===
@@ -298,7 +265,6 @@ function setupBatchTab() {
     console.log('[BATCH] Setting up Batch Tab...');
     
     // Get all elements
-    const pasteBtn = document.getElementById('pasteBtn');
     const clearBtn = document.getElementById('clearBatchBtn');
     const browseBtn = document.getElementById('browseBatchBtn');
     const startBtn = document.getElementById('startBatchBtn');
@@ -306,38 +272,22 @@ function setupBatchTab() {
     const formatSelect = document.getElementById('batchFormatSelect');
     const qualitySelect = document.getElementById('batchQualitySelect');
     const qualityRow = document.getElementById('batchQualityRow');
-    
+
     console.log('[BATCH] Elements found:', {
-        pasteBtn: !!pasteBtn,
         clearBtn: !!clearBtn,
         browseBtn: !!browseBtn,
         startBtn: !!startBtn,
         textarea: !!textarea,
         formatSelect: !!formatSelect
     });
-    
-    if (!pasteBtn || !clearBtn || !browseBtn || !startBtn || !textarea) {
+
+    if (!clearBtn || !browseBtn || !startBtn || !textarea) {
         console.error('[BATCH] Missing critical elements!');
         return;
     }
-    
-    // Paste button
-    pasteBtn.addEventListener('click', async function(e) {
-        console.log('[BATCH] Paste button clicked');
-        e.preventDefault();
-        try {
-            const text = await navigator.clipboard.readText();
-            textarea.value = text;
-            console.log('[BATCH] Pasted URLs');
-        } catch (err) {
-            console.error('[BATCH] Paste error:', err);
-            showError('Cannot access clipboard');
-        }
-    });
-    
+
     // Clear button
-    clearBtn.addEventListener('click', function(e) {
-        console.log('[BATCH] Clear button clicked');
+    clearBtn.addEventListener('click', function(e) {        console.log('[BATCH] Clear button clicked');
         e.preventDefault();
         textarea.value = '';
         const tbody = document.getElementById('batchTableBody');
@@ -369,6 +319,11 @@ function setupBatchTab() {
             console.error('[BATCH] Browse error:', err);
             showError('Error: ' + err.message);
         }
+    });
+
+    // Manual path input listener
+    document.getElementById('batchSavePath').addEventListener('input', (e) => {
+        state.savePath = e.target.value;
     });
     
     // Format select
@@ -441,6 +396,198 @@ function setupBatchTab() {
     console.log('[BATCH] Setup complete');
 }
 
+// === COMPRESS TAB ===
+function setupCompressTab() {
+    console.log('[COMPRESS] Setting up Compress Tab...');
+    
+    const selectBtn = document.getElementById('selectFilesBtn');
+    const startBtn = document.getElementById('startCompressBtn');
+    const typeSelect = document.getElementById('compressType');
+    const modeSelect = document.getElementById('selectionMode');
+    const formatSelect = document.getElementById('compressFormat');
+    const browseBtn = document.getElementById('browseCompressBtn');
+    const savePathInput = document.getElementById('compressSavePath');
+    
+    if (!selectBtn || !startBtn || !typeSelect) return;
+    
+    // Select files or folder
+    selectBtn.addEventListener('click', async () => {
+        try {
+            let files = [];
+            if (modeSelect.value === 'file') {
+                files = await window.go.main.App.SelectFiles(typeSelect.value);
+            } else {
+                files = await window.go.main.App.SelectFolder(typeSelect.value);
+            }
+            
+            if (files && files.length > 0) {
+                state.selectedCompressFiles = files;
+                renderCompressFiles();
+                startBtn.disabled = false;
+            } else if (modeSelect.value === 'folder') {
+                showError('No matching files found in the selected folder.');
+            }
+        } catch (err) {
+            console.error('[COMPRESS] Selection error:', err);
+        }
+    });
+    
+    // Type change - update format dropdown
+    typeSelect.addEventListener('change', () => {
+        // Clear list and disable start button
+        state.selectedCompressFiles = [];
+        renderCompressFiles();
+        startBtn.disabled = true;
+
+        const type = typeSelect.value;
+        formatSelect.innerHTML = '';
+        
+        const originalOpt = document.createElement('option');
+        originalOpt.value = 'original';
+        originalOpt.textContent = 'Keep Original';
+        formatSelect.appendChild(originalOpt);
+        
+        if (type === 'video') {
+            const mp4Opt = document.createElement('option');
+            mp4Opt.value = 'mp4';
+            mp4Opt.textContent = 'MP4';
+            formatSelect.appendChild(mp4Opt);
+            formatSelect.value = 'original';
+        } else {
+            const formats = [
+                { val: 'webp', label: 'WebP' },
+                { val: 'jpg', label: 'JPG' },
+                { val: 'png', label: 'PNG' }
+            ];
+            formats.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f.val;
+                opt.textContent = f.label;
+                formatSelect.appendChild(opt);
+            });
+            formatSelect.value = 'webp';
+        }
+    });
+
+    // Selection Mode change - clear list
+    modeSelect.addEventListener('change', () => {
+        state.selectedCompressFiles = [];
+        renderCompressFiles();
+        startBtn.disabled = true;
+    });
+    
+    // Trigger initial state
+    typeSelect.dispatchEvent(new Event('change'));
+    
+    // Browse button
+    browseBtn.addEventListener('click', async () => {
+        try {
+            const path = await window.go.main.App.OpenFolderDialog();
+            if (path) {
+                savePathInput.value = path;
+                state.savePath = path;
+            }
+        } catch (err) {
+            console.error('[COMPRESS] Browse error:', err);
+        }
+    });
+    
+    // Start compression
+    startBtn.addEventListener('click', async () => {
+        if (state.selectedCompressFiles.length === 0) return;
+        
+        startBtn.disabled = true;
+        startBtn.textContent = '⚡ Compressing...';
+        
+        const msgEl = document.getElementById('compressMessage');
+        if (msgEl) {
+            msgEl.textContent = '';
+            msgEl.className = 'result-message';
+        }
+        
+        const options = {
+            type: typeSelect.value,
+            quality: document.getElementById('compressQuality').value,
+            format: formatSelect.value,
+            savePath: savePathInput.value
+        };
+        
+        try {
+            await window.go.main.App.StartCompression(state.selectedCompressFiles, options);
+        } catch (err) {
+            console.error('[COMPRESS] Start error:', err);
+            startBtn.disabled = false;
+            startBtn.textContent = '⚡ Start Compression';
+        }
+    });
+}
+
+function renderCompressFiles() {
+    const tbody = document.getElementById('compressTableBody');
+    tbody.innerHTML = '';
+    
+    state.selectedCompressFiles.forEach((file, i) => {
+        const filename = file.split('/').pop().split('\\').pop();
+        const row = document.createElement('tr');
+        row.id = `compress-row-${i}`;
+        row.innerHTML = `
+            <td>${i + 1}</td>
+            <td title="${file}">${filename}</td>
+            <td class="compress-status">Waiting</td>
+            <td>
+                <div class="batch-progress-bar">
+                    <div class="batch-progress-fill" id="compress-progress-${i}"></div>
+                </div>
+            </td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+function updateCompressStatus(index, status) {
+    const row = document.getElementById(`compress-row-${index}`);
+    if (row) {
+        const statusCell = row.querySelector('.compress-status');
+        if (statusCell) statusCell.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+    }
+}
+
+function updateCompressProgress(index, status, message) {
+    const row = document.getElementById(`compress-row-${index}`);
+    if (row) {
+        const fill = document.getElementById(`compress-progress-${index}`);
+        const statusCell = row.querySelector('.compress-status');
+        
+        if (status === 'compressing') {
+            if (fill) fill.style.width = '50%'; // Indeterminate state
+            if (statusCell) statusCell.textContent = 'Processing...';
+        } else if (status === 'done') {
+            if (fill) {
+                fill.style.width = '100%';
+                fill.style.backgroundColor = '#34c759';
+            }
+            if (statusCell) {
+                statusCell.textContent = '✅ Done';
+                statusCell.style.color = '#34c759';
+            }
+        }
+    }
+}
+
+function updateCompressError(index, error) {
+    const row = document.getElementById(`compress-row-${index}`);
+    if (row) {
+        const statusCell = row.querySelector('.compress-status');
+        const fill = document.getElementById(`compress-progress-${index}`);
+        if (statusCell) {
+            statusCell.textContent = '❌ Error';
+            statusCell.style.color = '#ff3b30';
+            statusCell.title = error;
+        }
+        if (fill) fill.style.backgroundColor = '#ff3b30';
+    }
+}
+
 // === UI HELPERS ===
 function updateProgress(data) {
     if (!data) return;
@@ -477,12 +624,6 @@ function updateProgress(data) {
         
         if (percentage >= 100 && (data.speed === 'Processing...' || data.speed === 'Finalizing...')) {
             if (progressFill) progressFill.classList.add('processing-pulse');
-        } else if (percentage >= 100 && (data.speed === 'Done' || !data.speed)) {
-            const btn = document.getElementById('startDownloadBtn');
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = '▶ Start Download';
-            }
         }
     } else {
         // BATCH DOWNLOAD UI UPDATE
