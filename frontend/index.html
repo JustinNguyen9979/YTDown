@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YTDown</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🎬 YTDown</h1>
+        </div>
+
+        <!-- Tab Switcher -->
+        <div class="tabs">
+            <button type="button" class="tab-btn active" data-tab="single">Single</button>
+            <button type="button" class="tab-btn" data-tab="batch">Batch</button>
+        </div>
+
+        <!-- Single Tab -->
+        <div id="single" class="tab-content active">
+            <div class="input-group">
+                <input type="text" id="singleUrl" class="url-input" placeholder="Paste video URL here..." />
+                <button type="button" class="clear-btn" id="clearSingle">✕</button>
+            </div>
+
+            <div class="settings">
+                <div class="setting-row">
+                    <label>Format:</label>
+                    <select id="formatSelect">
+                        <option value="MP4">MP4</option>
+                        <option value="MP3">MP3</option>
+                    </select>
+                </div>
+
+                <div class="setting-row" id="qualityRow">
+                    <label>Quality:</label>
+                    <select id="qualitySelect">
+                        <option value="Best Quality">Best Quality</option>
+                        <option value="1080p">1080p</option>
+                        <option value="720p">720p</option>
+                        <option value="480p">480p</option>
+                        <option value="360p">360p</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="save-path">
+                <label>Save to:</label>
+                <div class="path-group">
+                    <input type="text" id="savePath" readonly class="path-input" />
+                    <button type="button" class="browse-btn" id="browseBtn">Browse</button>
+                </div>
+            </div>
+
+            <button type="button" class="download-btn" id="startDownloadBtn" disabled>▶ Start Download</button>
+
+            <!-- Progress Section -->
+            <div class="progress-section">
+                <div class="video-info">
+                    <span id="videoTitle">-</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-text">
+                    <span id="progressPercent">0%</span> • 
+                    <span id="progressSpeed">0 MB/s</span> • 
+                    <span id="progressETA">—</span>
+                </div>
+                <div class="result-message" id="resultMessage"></div>
+            </div>
+        </div>
+
+        <!-- Batch Tab -->
+        <div id="batch" class="tab-content">
+            <div class="batch-buttons">
+                <button type="button" id="pasteBtn" class="action-btn">Paste</button>
+                <button type="button" id="clearBatchBtn" class="action-btn secondary">Clear</button>
+            </div>
+
+            <textarea id="batchUrls" class="batch-input" placeholder="Paste one URL per line..."></textarea>
+
+            <div class="settings">
+                <div class="setting-row">
+                    <label>Format:</label>
+                    <select id="batchFormatSelect">
+                        <option value="MP4">MP4</option>
+                        <option value="MP3">MP3</option>
+                    </select>
+                </div>
+
+                <div class="setting-row" id="batchQualityRow">
+                    <label>Quality:</label>
+                    <select id="batchQualitySelect">
+                        <option value="Best Quality">Best Quality</option>
+                        <option value="1080p">1080p</option>
+                        <option value="720p">720p</option>
+                        <option value="480p">480p</option>
+                        <option value="360p">360p</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="save-path">
+                <label>Save to:</label>
+                <div class="path-group">
+                    <input type="text" id="batchSavePath" readonly class="path-input" />
+                    <button type="button" class="browse-btn" id="browseBatchBtn">Browse</button>
+                </div>
+            </div>
+
+            <button type="button" class="download-btn" id="startBatchBtn">▶ Start Batch Download</button>
+
+            <!-- Batch Progress -->
+            <div class="batch-progress">
+                <table class="batch-table" id="batchTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Video Title</th>
+                            <th>Status</th>
+                            <th>Progress</th>
+                        </tr>
+                    </thead>
+                    <tbody id="batchTableBody"></tbody>
+                </table>
+                <div class="batch-summary" id="batchSummary"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Wails Runtime (injected in dev mode via DevServer) -->
+    <!-- This ensures window.go and window.runtime are available before app.js runs -->
+    
+    <script src="app.js"></script>
+</body>
+</html>

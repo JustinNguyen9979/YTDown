@@ -1,0 +1,40 @@
+{
+  "name": "YTDown",
+  "outputfilename": "YTDown",
+  "debounce": 100,
+  "devserver": "localhost:3200",
+  "author": {
+    "name": "YTDown Team",
+    "email": "support@ytdown.dev"
+  },
+  "info": {
+    "companyname": "YTDown",
+    "productname": "YTDown",
+    "productversion": "1.0.0",
+    "copyright": "Copyright © 2024",
+    "comments": "YouTube video downloader for macOS"
+  },
+  "build": {
+    "nsis": {
+      "variables": {}
+    },
+    "webKit": {},
+    "windows": {
+      "signscript": "",
+      "signingCertificate": ""
+    },
+    "mac": {
+      "universalBuild": true,
+      "codeSigningIdentity": "",
+      "codesigningidentity": "",
+      "codesignidentity": "",
+      "entitlements": "build/darwin/entitlements.plist",
+      "signingidentity": "",
+      "signoptions": "nodot,adhoc"
+    },
+    "linux": {
+      "linuxName": "",
+      "linuxPrompt": ""
+    }
+  }
+}

@@ -1,0 +1,36 @@
+# Binaries & Build Artifacts
+build/bin/
+dist/
+bin/
+*.app
+*.dmg
+ytdown
+build_output.txt
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Dependencies
+vendor/
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Environment
+.env
+.env.local
