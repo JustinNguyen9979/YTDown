@@ -13,10 +13,12 @@ import (
 
 // CompressionOptions stores settings for compression
 type CompressionOptions struct {
-	Type     string `json:"type"`     // "video" or "image"
-	Quality  string `json:"quality"`  // "low", "medium", "high"
-	Format   string `json:"format"`   // "mp4", "webp", "jpg", "png", etc.
-	SavePath string `json:"savePath"`
+	Type           string `json:"type"`     // "video" or "image"
+	Quality        string `json:"quality"`  // "low", "medium", "high", "custom"
+	CustomQuality  int    `json:"customQuality"` // 1-100
+	UseSlowPreset  bool   `json:"useSlowPreset"`
+	Format         string `json:"format"`   // "mp4", "webp", "jpg", "png", etc.
+	SavePath       string `json:"savePath"`
 }
 
 // CompressFile handles single file compression
@@ -46,13 +48,17 @@ func CompressFile(ctx context.Context, inputPath string, options CompressionOpti
 
 	var args []string
 	if options.Type == "video" {
-		args = buildVideoCompressArgs(inputPath, outputPath, options.Quality)
+		args = buildVideoCompressArgs(inputPath, outputPath, options)
 	} else {
-		args = buildImageCompressArgs(inputPath, outputPath, options.Quality, options.Format)
+		args = buildImageCompressArgs(inputPath, outputPath, options)
 	}
 
 	cmd := exec.Command(ffmpegPath, args...)
 	
+	// Capture stderr to diagnose issues
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+
 	// We can't easily get percentage from FFmpeg for compression without complex parsing,
 	// so we'll just report "Processing" and then "Done".
 	runtime.EventsEmit(ctx, "compression-progress", map[string]interface{}{
@@ -62,7 +68,7 @@ func CompressFile(ctx context.Context, inputPath string, options CompressionOpti
 	})
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("compression failed: %v", err)
+		return fmt.Errorf("compression failed: %v\nDetails: %s", err, stderr.String())
 	}
 
 	runtime.EventsEmit(ctx, "compression-progress", map[string]interface{}{
@@ -74,22 +80,30 @@ func CompressFile(ctx context.Context, inputPath string, options CompressionOpti
 	return nil
 }
 
-func buildVideoCompressArgs(input, output, quality string) []string {
-	// CRF (Constant Rate Factor): 0-51, lower is better quality. 
-	// 23 is default, 18 is visually lossless, 28 is still good but much smaller.
-	crf := "23"
+func buildVideoCompressArgs(input, output string, options CompressionOptions) []string {
+	crf := "28"
 	preset := "medium"
-
-	switch quality {
-	case "low":
-		crf = "32" // Smaller file, lower quality
-		preset = "faster"
-	case "medium":
-		crf = "26" // Good balance
-		preset = "medium"
-	case "high":
-		crf = "20" // High quality, larger file
+	if options.UseSlowPreset {
 		preset = "slow"
+	}
+
+	if options.Quality == "custom" {
+		// Map 1-100 (Human) to 51-18 (CRF)
+		// 100 -> 18 (Best), 1 -> 51 (Worst)
+		val := 51 - (options.CustomQuality * (51 - 18) / 100)
+		crf = fmt.Sprintf("%d", val)
+	} else {
+		switch options.Quality {
+		case "low":
+			crf = "35"
+			if options.UseSlowPreset { preset = "slow" }
+		case "medium":
+			crf = "30"
+			if options.UseSlowPreset { preset = "slow" }
+		case "high":
+			crf = "25"
+			if options.UseSlowPreset { preset = "slow" }
+		}
 	}
 
 	return []string{
@@ -97,32 +111,67 @@ func buildVideoCompressArgs(input, output, quality string) []string {
 		"-vcodec", "libx264",
 		"-crf", crf,
 		"-preset", preset,
+		"-pix_fmt", "yuv420p",
+		"-movflags", "+faststart",
 		"-acodec", "aac",
 		"-b:a", "128k",
-		"-y", // Overwrite output if exists
+		"-y",
 		output,
 	}
 }
 
-func buildImageCompressArgs(input, output, quality, format string) []string {
+func buildImageCompressArgs(input, output string, options CompressionOptions) []string {
+	// For image output, we want to ensure we only take 1 frame if input is video.
+	// But if input is already an image, -frames:v 1 is sometimes problematic depending on ffmpeg version.
+	
 	args := []string{"-i", input}
-
-	// Basic quality mapping for images
-	qValue := "80"
-	switch quality {
-	case "low":
-		qValue = "50"
-	case "medium":
-		qValue = "75"
-	case "high":
-		qValue = "95"
+	
+	// If it's a video being converted to image, we MUST use -frames:v 1
+	// We'll check extension to guess.
+	ext := strings.ToLower(filepath.Ext(input))
+	isVideo := false
+	videoExts := []string{".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"}
+	for _, ve := range videoExts {
+		if ext == ve {
+			isVideo = true
+			break
+		}
 	}
 
-	if strings.ToLower(format) == "webp" {
-		args = append(args, "-c:v", "libwebp", "-q:v", qValue)
-	} else if strings.ToLower(format) == "jpg" || strings.ToLower(format) == "jpeg" {
-		args = append(args, "-q:v", "2") // FFmpeg uses 1-31 for JPEG, lower is better. 2 is very high quality.
-		// For JPEG, we might want to use scale for quality if not using q:v correctly
+	if isVideo {
+		args = append(args, "-frames:v", "1")
+	}
+
+	format := strings.ToLower(options.Format)
+	qValue := "80"
+	jpegQ := "5"
+
+	if options.Quality == "custom" {
+		qValue = fmt.Sprintf("%d", options.CustomQuality)
+		jVal := 32 - (options.CustomQuality * 31 / 100)
+		if jVal < 1 { jVal = 1 }
+		if jVal > 31 { jVal = 31 }
+		jpegQ = fmt.Sprintf("%d", jVal)
+	} else {
+		switch options.Quality {
+		case "low":
+			qValue = "50"
+			jpegQ = "12"
+		case "medium":
+			qValue = "75"
+			jpegQ = "5"
+		case "high":
+			qValue = "95"
+			jpegQ = "2"
+		}
+	}
+
+	if format == "webp" {
+		args = append(args, "-c:v", "libwebp", "-q:v", qValue, "-preset", "picture")
+	} else if format == "jpg" || format == "jpeg" {
+		args = append(args, "-q:v", jpegQ)
+	} else if format == "png" {
+		args = append(args, "-compression_level", "9")
 	}
 
 	args = append(args, "-y", output)

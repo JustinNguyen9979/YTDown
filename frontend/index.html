@@ -81,8 +81,8 @@
                 <div class="setting-row">
                     <label>Type:</label>
                     <select id="compressType">
+                        <option value="image" selected>Image</option>
                         <option value="video">Video</option>
-                        <option value="image">Image</option>
                     </select>
                 </div>
                 <div class="setting-row">
@@ -119,6 +119,7 @@
                         <option value="medium">Medium (Balanced)</option>
                         <option value="high">High (Keep Quality)</option>
                         <option value="low">Low (Smallest Size)</option>
+                        <option value="custom">Custom Quality</option>
                     </select>
                 </div>
 
@@ -127,6 +128,18 @@
                     <select id="compressFormat">
                         <!-- Dynamic options -->
                     </select>
+                </div>
+
+                <div class="setting-row full-width" id="customQualityContainer" style="display: none; grid-column: span 2;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <label id="customQualityLabel">Quality: 80 - High Quality</label>
+                    </div>
+                    <input type="range" id="customQualitySlider" min="1" max="100" value="80" style="width: 100%; margin: 10px 0;">
+                </div>
+
+                <div class="setting-row full-width" id="slowPresetContainer" style="grid-column: span 2; flex-direction: row; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="useSlowPreset" checked style="width: 16px; height: 16px; cursor: pointer;">
+                    <label for="useSlowPreset" style="text-transform: none; cursor: pointer; letter-spacing: normal; font-size: 13px;">Slower for better compression (Recommended)</label>
                 </div>
             </div>
 
