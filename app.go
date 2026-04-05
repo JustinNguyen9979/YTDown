@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strings"
@@ -33,12 +35,17 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.loadConfig()
-	
+
 	// Check binaries after a short delay to ensure UI is ready
 	go func() {
 		status := a.CheckBinaries()
 		if !status["ytdlp"].(bool) {
-			runtime.EventsEmit(ctx, "binary-error", "yt-dlp is missing. Please install it with: brew install yt-dlp")
+			runtime.EventsEmit(ctx, "binary-warning", "yt-dlp is missing. Trying Homebrew install...")
+			if err := ensureYTDLPInstalled(ctx); err != nil {
+				runtime.EventsEmit(ctx, "binary-error", "yt-dlp install failed: "+err.Error())
+				return
+			}
+			runtime.EventsEmit(ctx, "binary-warning", "yt-dlp installed via Homebrew.")
 		} else if !status["ffmpeg"].(bool) {
 			runtime.EventsEmit(ctx, "binary-warning", "ffmpeg is missing. Some formats (like MP3) will fail.")
 		}
@@ -54,6 +61,41 @@ func (a *App) CheckBinaries() map[string]interface{} {
 		"ytdlp":  ytdlpPath != "",
 		"ffmpeg": ffmpegPath != "",
 	}
+}
+
+func getBrewPath() string {
+	for _, p := range []string{
+		"/opt/homebrew/bin/brew",
+		"/usr/local/bin/brew",
+	} {
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p
+		}
+	}
+	return ""
+}
+
+func ensureYTDLPInstalled(_ context.Context) error {
+	if path := getResourcePath("yt-dlp"); path != "" {
+		return nil
+	}
+
+	brewPath := getBrewPath()
+	if brewPath == "" {
+		return fmt.Errorf("Homebrew is not installed")
+	}
+
+	cmd := exec.Command(brewPath, "install", "yt-dlp")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(output)))
+	}
+
+	if path := getResourcePath("yt-dlp"); path == "" {
+		return fmt.Errorf("yt-dlp is still unavailable after brew install")
+	}
+
+	return nil
 }
 
 // shutdown is called at application termination
@@ -165,7 +207,7 @@ func (a *App) StartBatchDownload(urls []string, format, quality, savePath string
 				})
 
 				err := DownloadVideo(a.ctx, i, url, format, quality, savePath)
-				
+
 				mu.Lock()
 				results[url] = err == nil
 				mu.Unlock()
@@ -312,7 +354,7 @@ func (a *App) StartCompression(files []string, options CompressionOptions) strin
 			})
 
 			err := CompressFile(a.ctx, file, options, i)
-			
+
 			if err != nil {
 				runtime.EventsEmit(a.ctx, "compression-error", map[string]interface{}{
 					"index": i,

@@ -33,9 +33,9 @@
 ## 🛠️ Yêu Cầu Hệ Thống (Requirements)
 
 *   **Hệ điều hành**: macOS 12 Monterey trở lên.
-*   **Công cụ đi kèm**: 
-    *   `yt-dlp` (Đã được bundle sẵn trong app hoặc cài qua `brew install yt-dlp`).
-    *   `ffmpeg` (Cần thiết để gộp video/audio - Cài qua `brew install ffmpeg`).
+*   **Công cụ đi kèm**:
+    *   `yt-dlp` sẽ được app tự cài qua Homebrew khi cần.
+    *   `ffmpeg` được bundle sẵn bên trong `YTDown.app`.
 
 ---
 
@@ -69,6 +69,30 @@ wails build -platform darwin
 wails build -platform darwin -tags universal
 ```
 Sản phẩm sau khi build sẽ nằm trong thư mục: `build/bin/YTDown.app`
+
+### 5. Đóng Gói Bản Phát Hành Cho End-user
+```bash
+bash build.sh
+```
+
+Script này sẽ:
+- build `YTDown.app`
+- tự bundle `ffmpeg` vào `YTDown.app/Contents/Resources`
+- ký lại app bằng ad-hoc signature
+- tạo file `.dmg` trong thư mục `dist/`
+
+Người dùng cuối chỉ cần mở file `.dmg`, kéo `YTDown.app` vào `Applications` và chạy app. App sẽ dùng Homebrew để cài `yt-dlp` nếu máy chưa có sẵn.
+
+Lưu ý khi build release:
+- `ffmpeg` có thể lấy từ Homebrew hoặc binary tự tải về.
+- `yt-dlp` không còn được bundle trong app.
+- Máy đích cần có Homebrew để app có thể tự cài `yt-dlp`.
+- Có thể chỉ định rõ đường dẫn `ffmpeg` khi build:
+
+```bash
+FFMPEG_PATH=/absolute/path/to/ffmpeg \
+bash build.sh
+```
 
 ---
 

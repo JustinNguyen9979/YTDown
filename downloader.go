@@ -19,15 +19,15 @@ import (
 
 // DownloadVideo downloads a video using yt-dlp
 func DownloadVideo(ctx context.Context, index int, url, format, quality, savePath string) error {
+	if err := ensureYTDLPInstalled(ctx); err != nil {
+		return fmt.Errorf("yt-dlp not available: %w", err)
+	}
+
 	ytdlpPath := getResourcePath("yt-dlp")
 	ffmpegPath := getResourcePath("ffmpeg")
 
 	println("[DL] yt-dlp path:", ytdlpPath)
 	println("[DL] ffmpeg path:", ffmpegPath)
-
-	if ytdlpPath == "" {
-		return fmt.Errorf("yt-dlp not found - install with: brew install yt-dlp")
-	}
 
 	if ffmpegPath == "" {
 		println("[DL] warning: ffmpeg not found, some formats may fail")
@@ -57,22 +57,22 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 	}
 
 	/*
-	// Create debug log file
-	debugFile, _ := os.OpenFile("ytdlp_debug.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if debugFile != nil {
-		defer debugFile.Close()
-		debugFile.WriteString("\n--- NEW DOWNLOAD START ---\n")
-		debugFile.WriteString("URL: " + url + "\n")
-	}
+		// Create debug log file
+		debugFile, _ := os.OpenFile("ytdlp_debug.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if debugFile != nil {
+			defer debugFile.Close()
+			debugFile.WriteString("\n--- NEW DOWNLOAD START ---\n")
+			debugFile.WriteString("URL: " + url + "\n")
+		}
 	*/
 
 	// Read progress output
 	scanner := bufio.NewScanner(stdout)
-	
+
 	// Set a larger buffer for the scanner (up to 1MB) to handle long output lines
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
-	
+
 	// Custom split function to handle both \n and \r
 	scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 		if atEOF && len(data) == 0 {
@@ -91,12 +91,12 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		
+
 		/*
-		// Write EVERY line to debug log
-		if debugFile != nil && line != "" {
-			debugFile.WriteString(line + "\n")
-		}
+			// Write EVERY line to debug log
+			if debugFile != nil && line != "" {
+				debugFile.WriteString(line + "\n")
+			}
 		*/
 
 		if strings.Contains(line, "[download]") {
@@ -251,6 +251,10 @@ func parseProgress(line string) map[string]interface{} {
 
 // GetVideoMetadata fetches video title and duration
 func GetVideoMetadata(url string) (string, error) {
+	if err := ensureYTDLPInstalled(context.Background()); err != nil {
+		return "", fmt.Errorf("yt-dlp not available: %w", err)
+	}
+
 	ytdlpPath := getResourcePath("yt-dlp")
 	if ytdlpPath == "" {
 		return "", fmt.Errorf("yt-dlp not found")
@@ -276,6 +280,10 @@ func GetVideoMetadata(url string) (string, error) {
 
 // GetPlaylistVideos extracts all videos from a playlist
 func GetPlaylistVideos(url string) ([]string, error) {
+	if err := ensureYTDLPInstalled(context.Background()); err != nil {
+		return nil, fmt.Errorf("yt-dlp not available: %w", err)
+	}
+
 	ytdlpPath := getResourcePath("yt-dlp")
 	if ytdlpPath == "" {
 		return nil, fmt.Errorf("yt-dlp not found")
@@ -308,6 +316,19 @@ func GetPlaylistVideos(url string) ([]string, error) {
 
 // getResourcePath finds binary in bundle or system paths
 func getResourcePath(name string) string {
+	if name == "yt-dlp" {
+		for _, p := range []string{
+			"/opt/homebrew/bin/" + name,
+			"/usr/local/bin/" + name,
+			"/usr/bin/" + name,
+		} {
+			if info, err := os.Stat(p); err == nil && !info.IsDir() {
+				return p
+			}
+		}
+		return ""
+	}
+
 	// Try bundled resources first
 	execPath, err := os.Executable()
 	if err == nil {
