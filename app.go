@@ -184,6 +184,8 @@ echo "=========================================="
 # Check Homebrew
 if ! command -v brew &> /dev/null && [ ! -f "/opt/homebrew/bin/brew" ] && [ ! -f "/usr/local/bin/brew" ]; then
     echo "📦 Homebrew not found. Installing..."
+    echo "👉 NOTE: Please enter your Mac password when prompted."
+    echo "   (Characters will NOT show while you type, just type it and press Enter)"
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 fi
 
@@ -196,7 +198,6 @@ elif [ -f "/usr/local/bin/brew" ]; then
     BREW_PATH="/usr/local/bin/brew"
 else
     echo "❌ Error: Homebrew installation failed or not found."
-    read -p "Press Enter to exit..."
     exit 1
 fi
 
@@ -224,7 +225,8 @@ setup_shell "$HOME/.zshrc" "$LINE"
 setup_shell "$HOME/.bash_profile" "$LINE"
 
 echo "📦 Installing/Updating yt-dlp and ffmpeg..."
-$BREW_PATH install yt-dlp ffmpeg
+$BREW_PATH update
+$BREW_PATH install yt-dlp ffmpeg || $BREW_PATH upgrade yt-dlp ffmpeg
 
 echo ""
 echo "✅ SETUP COMPLETE!"
