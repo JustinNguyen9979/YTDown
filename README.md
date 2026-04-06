@@ -27,6 +27,12 @@ Homebrew là trình quản lý gói dành cho macOS. Hãy copy dòng lệnh sau 
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
+**Lưu ý quan trọng:** Sau khi chạy xong lệnh trên, bạn cần thêm Homebrew vào đường dẫn hệ thống (PATH) bằng cách chạy 2 lệnh sau:
+```bash
+(echo; echo 'eval "$(/opt/homebrew/bin/brew shellenv)"') >> ~/.zshrc
+eval "$(/opt/homebrew/bin/brew shellenv)"
+```
+
 ### 3. Cài đặt các công cụ hỗ trợ
 Sau khi cài xong Homebrew, hãy dán lệnh này để cài đặt các thành phần cần thiết:
 ```bash
