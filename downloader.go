@@ -20,18 +20,11 @@ import (
 
 // DownloadVideo downloads a video using yt-dlp
 func DownloadVideo(ctx context.Context, index int, url, format, quality, savePath string) error {
-	if err := ensureYTDLPInstalled(ctx); err != nil {
-		return fmt.Errorf("yt-dlp not available: %w", err)
-	}
-
 	ytdlpPath := getResourcePath("yt-dlp")
 	ffmpegPath := getResourcePath("ffmpeg")
 
-	println("[DL] yt-dlp path:", ytdlpPath)
-	println("[DL] ffmpeg path:", ffmpegPath)
-
-	if ffmpegPath == "" {
-		println("[DL] warning: ffmpeg not found, some formats may fail")
+	if ytdlpPath == "" {
+		return fmt.Errorf("yt-dlp not found. Please install it or use the Setup Dependencies button.")
 	}
 
 	// Build yt-dlp arguments based on format and quality
@@ -256,10 +249,6 @@ func parseProgress(line string) map[string]interface{} {
 
 // GetVideoMetadata fetches video title and duration
 func GetVideoMetadata(url string) (string, error) {
-	if err := ensureYTDLPInstalled(context.Background()); err != nil {
-		return "", fmt.Errorf("yt-dlp not available: %w", err)
-	}
-
 	ytdlpPath := getResourcePath("yt-dlp")
 	if ytdlpPath == "" {
 		return "", fmt.Errorf("yt-dlp not found")
@@ -291,10 +280,6 @@ func GetVideoMetadata(url string) (string, error) {
 
 // GetPlaylistVideos extracts all videos from a playlist
 func GetPlaylistVideos(url string) ([]string, error) {
-	if err := ensureYTDLPInstalled(context.Background()); err != nil {
-		return nil, fmt.Errorf("yt-dlp not available: %w", err)
-	}
-
 	ytdlpPath := getResourcePath("yt-dlp")
 	if ytdlpPath == "" {
 		return nil, fmt.Errorf("yt-dlp not found")
@@ -331,22 +316,9 @@ func GetPlaylistVideos(url string) ([]string, error) {
 	return videos, nil
 }
 
-// getResourcePath finds binary in bundle or system paths
+// getResourcePath finds binary in bundle, user app support, or system paths
 func getResourcePath(name string) string {
-	if name == "yt-dlp" {
-		for _, p := range []string{
-			"/opt/homebrew/bin/" + name,
-			"/usr/local/bin/" + name,
-			"/usr/bin/" + name,
-		} {
-			if info, err := os.Stat(p); err == nil && !info.IsDir() {
-				return p
-			}
-		}
-		return ""
-	}
-
-	// Try bundled resources first
+	// 1. Try bundled resources first (for .app distribution)
 	execPath, err := os.Executable()
 	if err == nil {
 		// For .app bundle: ../Resources/
@@ -355,14 +327,14 @@ func getResourcePath(name string) string {
 			return bundled
 		}
 
-		// Also check current directory (for debug)
+		// Also check current directory (for debug/dev)
 		localPath := filepath.Join(filepath.Dir(execPath), "resources", name)
 		if info, err := os.Stat(localPath); err == nil && !info.IsDir() {
 			return localPath
 		}
 	}
 
-	// Check common system paths
+	// 2. Try common system paths (Homebrew, etc.)
 	for _, p := range []string{
 		"/opt/homebrew/bin/" + name,
 		"/usr/local/bin/" + name,
@@ -373,7 +345,7 @@ func getResourcePath(name string) string {
 		}
 	}
 
-	// Last resort: try system PATH
+	// 3. Last resort: try system PATH
 	if path, err := exec.LookPath(name); err == nil {
 		return path
 	}

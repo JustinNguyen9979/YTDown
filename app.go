@@ -144,7 +144,17 @@ func (a *App) UpgradeBinary(name string) error {
 	}
 
 	// Fallback to brew
-	brewPath := getBrewPath()
+	brewPath, _ := exec.LookPath("brew")
+	if brewPath == "" {
+		// Try common paths as fallback
+		for _, p := range []string{"/opt/homebrew/bin/brew", "/usr/local/bin/brew"} {
+			if _, err := os.Stat(p); err == nil {
+				brewPath = p
+				break
+			}
+		}
+	}
+
 	if brewPath != "" {
 		runtime.EventsEmit(a.ctx, "upgrade-status", "Self-update failed. Trying Homebrew...")
 		cmd = exec.Command(brewPath, "upgrade", "yt-dlp")
@@ -159,23 +169,98 @@ func (a *App) UpgradeBinary(name string) error {
 	return fmt.Errorf("failed to upgrade yt-dlp and Homebrew not found")
 }
 
+// LaunchSetupTerminal creates and runs a setup script in a new Terminal window
+func (a *App) LaunchSetupTerminal() error {
+	usr, _ := user.Current()
+	setupScriptPath := filepath.Join(usr.HomeDir, ".config", "ytdown", "setup_env.sh")
+	os.MkdirAll(filepath.Dir(setupScriptPath), 0755)
+
+	scriptContent := `#!/bin/bash
+set -e
+echo "=========================================="
+echo "   YTDown Environment Setup"
+echo "=========================================="
+
+# Check Homebrew
+if ! command -v brew &> /dev/null && [ ! -f "/opt/homebrew/bin/brew" ] && [ ! -f "/usr/local/bin/brew" ]; then
+    echo "📦 Homebrew not found. Installing..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+fi
+
+# Setup Homebrew PATH for current session
+if [ -f "/opt/homebrew/bin/brew" ]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+    BREW_PATH="/opt/homebrew/bin/brew"
+elif [ -f "/usr/local/bin/brew" ]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+    BREW_PATH="/usr/local/bin/brew"
+else
+    echo "❌ Error: Homebrew installation failed or not found."
+    read -p "Press Enter to exit..."
+    exit 1
+fi
+
+# Function to setup shell profile
+setup_shell() {
+    local profile=$1
+    local cmd=$2
+    if [ -f "$profile" ] || [ "$profile" == "$HOME/.zprofile" ]; then
+        if ! grep -qs "homebrew shellenv" "$profile"; then
+            echo "" >> "$profile"
+            echo "$cmd" >> "$profile"
+            echo "✅ Added Homebrew to $profile"
+        fi
+    fi
+}
+
+if [[ $(uname -m) == "arm64" ]]; then
+    LINE='eval "$(/opt/homebrew/bin/brew shellenv)"'
+else
+    LINE='eval "$(/usr/local/bin/brew shellenv)"'
+fi
+
+setup_shell "$HOME/.zprofile" "$LINE"
+setup_shell "$HOME/.zshrc" "$LINE"
+setup_shell "$HOME/.bash_profile" "$LINE"
+
+echo "📦 Installing/Updating yt-dlp and ffmpeg..."
+$BREW_PATH install yt-dlp ffmpeg
+
+echo ""
+echo "✅ SETUP COMPLETE!"
+echo "------------------------------------------"
+echo "1. yt-dlp and ffmpeg are now installed."
+echo "2. Homebrew PATH has been added to your shell profiles."
+echo ""
+echo "👉 THIS WINDOW WILL CLOSE IN 5 SECONDS."
+echo "------------------------------------------"
+sleep 5
+exit
+`
+
+	err := os.WriteFile(setupScriptPath, []byte(scriptContent), 0755)
+	if err != nil {
+		return err
+	}
+
+	// Use osascript to open Terminal, run the script, and then close the window
+	appleScript := fmt.Sprintf("tell application \"Terminal\" to do script \"/bin/bash %s; exit\"", setupScriptPath)
+	cmd := exec.Command("osascript", "-e", appleScript)
+	return cmd.Run()
+}
+
 // startup is called at application startup
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.loadConfig()
 
-	// Check binaries after a short delay to ensure UI is ready
+	// Check binaries after a short delay
 	go func() {
+		time.Sleep(1 * time.Second)
 		status := a.CheckBinaries()
-		if !status["ytdlp"].(bool) {
-			runtime.EventsEmit(ctx, "binary-warning", "yt-dlp is missing. Trying to install it with Homebrew...")
-			if err := ensureYTDLPInstalled(ctx); err != nil {
-				runtime.EventsEmit(ctx, "binary-error", err.Error())
-				return
-			}
-			runtime.EventsEmit(ctx, "binary-warning", "yt-dlp installed via Homebrew.")
-		} else if !status["ffmpeg"].(bool) {
-			runtime.EventsEmit(ctx, "binary-warning", "ffmpeg is missing. Some formats (like MP3) will fail.")
+		if !status["ytdlp"].(bool) || !status["ffmpeg"].(bool) {
+			// Emit event to frontend - the frontend should show a setup button/modal
+			runtime.EventsEmit(ctx, "binary-warning", "yt-dlp or ffmpeg is missing.")
 		}
 	}()
 }
@@ -189,45 +274,6 @@ func (a *App) CheckBinaries() map[string]interface{} {
 		"ytdlp":  ytdlpPath != "",
 		"ffmpeg": ffmpegPath != "",
 	}
-}
-
-func getBrewPath() string {
-	for _, p := range []string{
-		"/opt/homebrew/bin/brew",
-		"/usr/local/bin/brew",
-	} {
-		if info, err := os.Stat(p); err == nil && !info.IsDir() {
-			return p
-		}
-	}
-	return ""
-}
-
-func ensureYTDLPInstalled(_ context.Context) error {
-	if path := getResourcePath("yt-dlp"); path != "" {
-		return nil
-	}
-
-	brewPath := getBrewPath()
-	if brewPath == "" {
-		return fmt.Errorf("Homebrew is not installed. Please install Homebrew from https://brew.sh, then reopen YTDown")
-	}
-
-	cmd := exec.Command(brewPath, "install", "yt-dlp")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		trimmed := strings.TrimSpace(string(output))
-		if trimmed == "" {
-			trimmed = err.Error()
-		}
-		return fmt.Errorf("Failed to install yt-dlp with Homebrew. Run `brew install yt-dlp` manually. Details: %s", trimmed)
-	}
-
-	if path := getResourcePath("yt-dlp"); path == "" {
-		return fmt.Errorf("Homebrew finished, but yt-dlp is still unavailable. Run `brew install yt-dlp` manually and reopen YTDown")
-	}
-
-	return nil
 }
 
 // shutdown is called at application termination

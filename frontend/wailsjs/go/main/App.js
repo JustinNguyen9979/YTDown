@@ -22,6 +22,10 @@ export function GetVideoTitle(arg1) {
   return window['go']['main']['App']['GetVideoTitle'](arg1);
 }
 
+export function LaunchSetupTerminal() {
+  return window['go']['main']['App']['LaunchSetupTerminal']();
+}
+
 export function OpenFolderDialog() {
   return window['go']['main']['App']['OpenFolderDialog']();
 }

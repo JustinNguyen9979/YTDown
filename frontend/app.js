@@ -634,9 +634,81 @@ function updateProgress(data) {
 function showError(message) {
     const el = document.getElementById('resultMessage');
     if (el) {
-        el.textContent = message;
-        el.style.display = 'block';
         el.className = 'result-message error';
+        el.style.display = 'block';
+        
+        // Check if this is a dependency error
+        if (message.includes('yt-dlp') || message.includes('ffmpeg') || message.includes('Dependencies')) {
+            el.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                    <span>${message}</span>
+                    <button id="setupDepsBtn" style="
+                        background: #ff3b30; 
+                        color: white; 
+                        border: none; 
+                        padding: 4px 10px; 
+                        border-radius: 4px; 
+                        cursor: pointer;
+                        font-weight: bold;
+                        white-space: nowrap;
+                    ">🛠 Setup Now</button>
+                </div>
+            `;
+            
+            const btn = document.getElementById('setupDepsBtn');
+            if (btn) {
+                btn.addEventListener('click', async () => {
+                    if (btn.textContent.includes('Check Status')) {
+                        // RE-CHECK MODE
+                        btn.textContent = 'Checking...';
+                        try {
+                            const status = await window.go.main.App.CheckBinaries();
+                            if (status.ytdlp && status.ffmpeg) {
+                                clearResultMessage();
+                                // Success!
+                                console.log('[SETUP] Dependencies found!');
+                            } else {
+                                btn.textContent = '🔄 Still Missing - Check again';
+                                setTimeout(() => { btn.textContent = '🔄 Check Status'; }, 2000);
+                            }
+                        } catch (err) {
+                            console.error('[SETUP] Check error:', err);
+                        }
+                        return;
+                    }
+
+                    // INITIAL SETUP MODE
+                    btn.disabled = true;
+                    btn.textContent = 'Launching...';
+                    try {
+                        await window.go.main.App.LaunchSetupTerminal();
+                        btn.disabled = false;
+                        btn.style.background = '#34c759'; 
+                        btn.textContent = '🔄 Installing...';
+                        
+                        const span = el.querySelector('span');
+                        if (span) span.innerText = 'Setting up... Wait for Terminal to finish.';
+
+                        // AUTO-CHECK every 2 seconds
+                        const interval = setInterval(async () => {
+                            const status = await window.go.main.App.CheckBinaries();
+                            if (status.ytdlp && status.ffmpeg) {
+                                clearInterval(interval);
+                                clearResultMessage();
+                                console.log('[SETUP] Dependencies detected automatically!');
+                            }
+                        }, 2000);
+
+                    } catch (err) {
+                        alert('Failed to launch Terminal: ' + err);
+                        btn.disabled = false;
+                        btn.textContent = '🛠 Setup Now';
+                    }
+                });
+            }
+        } else {
+            el.textContent = message;
+        }
     }
 }
 
