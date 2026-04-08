@@ -6,6 +6,8 @@ export function CheckBinaries():Promise<Record<string, any>>;
 
 export function CheckPlaylist(arg1:string):Promise<Record<string, any>>;
 
+export function GetAppInfo():Promise<main.AppInfo>;
+
 export function GetDefaultSavePath():Promise<string>;
 
 export function GetVersionStatus():Promise<Array<main.BinaryVersion>>;

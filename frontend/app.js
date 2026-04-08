@@ -102,6 +102,7 @@ async function initializeApp() {
     setupCompressTab();
     setupGoEvents();
     setupWindowAutoHug();
+    setupInfoTab();
     
     if (state.wailsReady) {
         checkUpdates();
@@ -928,6 +929,20 @@ function closeVideoModal() {
     const container = document.getElementById('playerContainer');
     if (modal) modal.style.display = 'none';
     if (container) container.innerHTML = ''; // Stop video playback
+}
+
+async function setupInfoTab() {
+    if (state.wailsReady) {
+        try {
+            const appInfo = await window.go.main.App.GetAppInfo();
+            const versionEl = document.getElementById('appVersion');
+            if (versionEl && appInfo.version) {
+                versionEl.textContent = appInfo.version;
+            }
+        } catch (err) {
+            console.error('[INFO] Error loading app info:', err);
+        }
+    }
 }
 
 // Global modal event listeners

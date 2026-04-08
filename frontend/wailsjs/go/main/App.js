@@ -10,6 +10,10 @@ export function CheckPlaylist(arg1) {
   return window['go']['main']['App']['CheckPlaylist'](arg1);
 }
 
+export function GetAppInfo() {
+  return window['go']['main']['App']['GetAppInfo']();
+}
+
 export function GetDefaultSavePath() {
   return window['go']['main']['App']['GetDefaultSavePath']();
 }

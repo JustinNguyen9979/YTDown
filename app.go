@@ -121,6 +121,22 @@ func (a *App) GetVersionStatus() []BinaryVersion {
 	return versions
 }
 
+// AppInfo struct for app information
+type AppInfo struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Author  string `json:"author"`
+}
+
+// GetAppInfo returns application information
+func (a *App) GetAppInfo() AppInfo {
+	return AppInfo{
+		Name:    "YTDown",
+		Version: "v2026.04.08",
+		Author:  "Justin Nguyen",
+	}
+}
+
 // UpgradeBinary attempts to upgrade a binary
 func (a *App) UpgradeBinary(name string) error {
 	if name != "yt-dlp" {

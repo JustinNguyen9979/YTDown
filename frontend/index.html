@@ -19,6 +19,7 @@
         <div class="tabs">
             <button type="button" class="tab-btn active" data-tab="batch">Download</button>
             <button type="button" class="tab-btn" data-tab="compress">Compress</button>
+            <button type="button" class="tab-btn" data-tab="info" style="margin-left: auto;">ℹ️ Info</button>
         </div>
 
         <!-- Download Tab -->
@@ -170,6 +171,59 @@
             </div>
 
             <button type="button" class="download-btn" id="startCompressBtn" disabled>⚡ Start Compression</button>
+        </div>
+
+        <!-- Info Tab -->
+        <div id="info" class="tab-content">
+            <div class="info-container">
+                <div class="info-section">
+                    <h3>Version</h3>
+                    <p id="appVersion">2026.04.08</p>
+                </div>
+
+                <div class="info-section">
+                    <h3>Features</h3>
+                    <ul>
+                        <li>Download videos from YouTube, TikTok, Facebook, and more</li>
+                        <li>Batch download multiple videos</li>
+                        <li>Compress images and videos efficiently</li>
+                        <li>Support for restricted/age-gated content (with cookie)</li>
+                    </ul>
+                </div>
+
+                <div class="info-section">
+                    <h3>Tools Used</h3>
+                    <ul>
+                        <li><strong>yt-dlp</strong> - Video extraction engine</li>
+                        <li><strong>FFmpeg</strong> - Media processing</li>
+                    </ul>
+                </div>
+
+                <div class="info-section">
+                    <h3>Author</h3>
+                    <ul>
+                        <li><p>Justin Nguyen</p></li>
+                        <li><p>Telegram: Justin_Nguyen_SG</p></li>
+                    </ul>
+                </div>
+
+                <div class="info-section">
+                    <h3>Support & Donate</h3>
+                    <p style="margin-bottom: 12px;">If you find YTDown useful, please consider supporting the developer:</p>
+                    <ul>
+                        <li><strong>Bank:</strong> MB Bank</li>
+                        <li><strong>Account:</strong> <code style="background: var(--bg-secondary); padding: 2px 6px; border-radius: 3px; font-family: monospace;">079 88888 88888</code></li>
+                        <li><strong>Account Holder:</strong> Nguyen Duc Huy</li>
+                        <li><strong>PayPal:</strong> duchuy_1997@hotmail.com</li>
+                    </ul>
+                </div>
+
+                <div class="info-footer">
+                    <p style="font-size: 12px; color: var(--text-secondary); margin-top: 20px;">
+                        If YTDown helps with your work, please buy me a coffee ☕
+                    </p>
+                </div>
+            </div>
         </div>
     </div>
 
