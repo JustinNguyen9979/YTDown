@@ -254,6 +254,12 @@ exit
 // startup is called at application startup
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+
+	// Initialize logging system
+	if err := initLogger(); err != nil {
+		fmt.Printf("Failed to initialize logger: %v\n", err)
+	}
+
 	a.loadConfig()
 
 	// Check binaries after a short delay
@@ -282,6 +288,26 @@ func (a *App) CheckBinaries() map[string]interface{} {
 func (a *App) shutdown(ctx context.Context) {
 	clearTemporaryYouTubeCookie()
 	a.saveConfig()
+	closeLogger()
+}
+
+// GetLogPath returns the path to the log file
+func (a *App) GetLogPath() string {
+	usr, err := user.Current()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(usr.HomeDir, ".ytdown", "logs", "ytdown.log")
+}
+
+// OpenLogFile opens the log file in Finder
+func (a *App) OpenLogFile() error {
+	logPath := a.GetLogPath()
+	if logPath == "" {
+		return fmt.Errorf("could not determine log file path")
+	}
+	cmd := exec.Command("open", "-R", logPath)
+	return cmd.Run()
 }
 
 // loadConfig loads configuration from file
@@ -334,9 +360,18 @@ func (a *App) OpenSaveFolder(savePath string) {
 	if savePath == "" {
 		return
 	}
-	
+
 	// On macOS, 'open' handles directories correctly.
 	exec.Command("open", savePath).Run()
+}
+
+// OpenFile opens the specified file path in the system's default application
+func (a *App) OpenFile(filePath string) {
+	if filePath == "" {
+		return
+	}
+	// On macOS, 'open' handles files correctly.
+	exec.Command("open", filePath).Run()
 }
 
 // GetVideoInfo fetches video metadata using yt-dlp

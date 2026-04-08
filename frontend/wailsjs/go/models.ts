@@ -45,6 +45,7 @@ export namespace main {
 	export class VideoInfo {
 	    title: string;
 	    thumbnail: string;
+	    id: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new VideoInfo(source);
@@ -54,6 +55,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.title = source["title"];
 	        this.thumbnail = source["thumbnail"];
+	        this.id = source["id"];
 	    }
 	}
 

@@ -14,7 +14,8 @@ const state = {
     temporaryCookieDraft: '',
     maskedCookieValue: '',
     isSubmittingCookie: false,
-    cookieHasError: false
+    cookieHasError: false,
+    downloadedFiles: {} // Store index -> localFilePath
 };
 
 // Wait counter to prevent infinite loops
@@ -189,12 +190,33 @@ function setupGoEvents() {
                     const thumbCell = row.querySelector('td:nth-child(2)');
                     const titleCell = row.querySelector('td:nth-child(3)');
                     if (thumbCell && data.thumbnail) {
-                        thumbCell.innerHTML = `<img src="${data.thumbnail}" class="video-thumbnail" alt="thumb">`;
+                        const playIconSvg = `<svg class="play-icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>`;
+                        // Thumbnail initially dimmed until download finishes
+                        thumbCell.innerHTML = `
+                            <div class="video-thumbnail-container" id="thumb-container-${data.index}" style="cursor: default; filter: grayscale(1);">
+                                <img src="${data.thumbnail}" class="video-thumbnail" alt="thumb">
+                                <div class="play-overlay" id="play-overlay-${data.index}">${playIconSvg}</div>
+                            </div>`;
                     }
                     if (titleCell && data.title && (titleCell.innerText.startsWith('http') || titleCell.innerText.includes('...'))) {
                          titleCell.innerText = truncateMiddle(data.title.replace(/^["']|["']$/g, ''), 40);
                          titleCell.title = data.title;
                     }
+                }
+            });
+
+            window.runtime.EventsOn('download-complete', (data) => {
+                console.log('[DL] Download complete:', data);
+                state.downloadedFiles[data.index] = data.filePath;
+                
+                // Enable the play button on the thumbnail
+                const thumbContainer = document.getElementById(`thumb-container-${data.index}`);
+                if (thumbContainer) {
+                    thumbContainer.style.cursor = 'pointer';
+                    thumbContainer.style.filter = 'none';
+                    thumbContainer.onclick = () => {
+                        window.go.main.App.OpenFile(data.filePath);
+                    };
                 }
             });
 
@@ -889,3 +911,37 @@ function escapeHtml(value) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 }
+
+// Video Modal Logic
+function openVideoModal(videoId) {
+    const modal = document.getElementById('videoModal');
+    const container = document.getElementById('playerContainer');
+    if (!modal || !container || !videoId || videoId === 'undefined') return;
+
+    // Use YouTube NoCookie embed for better privacy
+    container.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+    modal.style.display = 'block';
+}
+
+function closeVideoModal() {
+    const modal = document.getElementById('videoModal');
+    const container = document.getElementById('playerContainer');
+    if (modal) modal.style.display = 'none';
+    if (container) container.innerHTML = ''; // Stop video playback
+}
+
+// Global modal event listeners
+document.addEventListener('DOMContentLoaded', () => {
+    const closeBtn = document.querySelector('.close-modal');
+    const modal = document.getElementById('videoModal');
+
+    if (closeBtn) {
+        closeBtn.onclick = closeVideoModal;
+    }
+
+    window.addEventListener('click', (event) => {
+        if (event.target == modal) {
+            closeVideoModal();
+        }
+    });
+});

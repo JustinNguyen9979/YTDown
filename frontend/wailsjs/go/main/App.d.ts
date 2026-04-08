@@ -8,13 +8,19 @@ export function CheckPlaylist(arg1:string):Promise<Record<string, any>>;
 
 export function GetDefaultSavePath():Promise<string>;
 
+export function GetLogPath():Promise<string>;
+
 export function GetVersionStatus():Promise<Array<main.BinaryVersion>>;
 
 export function GetVideoInfo(arg1:string):Promise<main.VideoInfo>;
 
 export function LaunchSetupTerminal():Promise<void>;
 
+export function OpenFile(arg1:string):Promise<void>;
+
 export function OpenFolderDialog():Promise<string>;
+
+export function OpenLogFile():Promise<void>;
 
 export function OpenSaveFolder(arg1:string):Promise<void>;
 
