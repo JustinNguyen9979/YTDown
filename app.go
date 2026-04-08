@@ -326,13 +326,26 @@ func (a *App) OpenFolderDialog() string {
 	return dir
 }
 
-// GetVideoTitle fetches video title using yt-dlp
-func (a *App) GetVideoTitle(url string) string {
-	title, err := GetVideoMetadata(url)
-	if err != nil {
-		return ""
+// OpenSaveFolder opens the specified folder path in Finder/File Explorer
+func (a *App) OpenSaveFolder(savePath string) {
+	if savePath == "" {
+		savePath = a.config.SavePath
 	}
-	return title
+	if savePath == "" {
+		return
+	}
+	
+	// On macOS, 'open' handles directories correctly.
+	exec.Command("open", savePath).Run()
+}
+
+// GetVideoInfo fetches video metadata using yt-dlp
+func (a *App) GetVideoInfo(url string) *VideoInfo {
+	info, err := GetVideoMetadata(url)
+	if err != nil {
+		return nil
+	}
+	return info
 }
 
 // StartDownload starts downloading a single video

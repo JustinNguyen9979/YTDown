@@ -305,6 +305,12 @@ select:focus {
     transform: scale(0.98);
 }
 
+.open-folder-btn:hover {
+    background: rgba(52, 199, 89, 0.15) !important;
+    border-color: var(--accent-green) !important;
+    color: var(--accent-green) !important;
+}
+
 /* Download Button */
 .download-btn {
     padding: 14px;
@@ -567,20 +573,46 @@ select:focus {
 }
 
 /* Định nghĩa độ rộng cụ thể cho từng cột */
-.batch-table th:nth-child(1), .batch-table td:nth-child(1) { width: 35px; min-width: 35px; } /* # */
-.batch-table th:nth-child(2), .batch-table td:nth-child(2) { 
+#batchTable th:nth-child(1), #batchTable td:nth-child(1) { width: 35px; min-width: 35px; } /* # */
+#batchTable th:nth-child(2), #batchTable td:nth-child(2) { width: 100px; min-width: 100px; text-align: center; } /* Thumbnail */
+#batchTable td:nth-child(2) { padding-left: 0; padding-right: 0; } /* Remove side padding for thumbnail cell */
+#batchTable th:nth-child(3), #batchTable td:nth-child(3) { 
     width: 100%; /* Cột Title tự giãn rộng nhất có thể */
     max-width: 0; 
     text-overflow: ellipsis;
 }
-.batch-table th:nth-child(3), .batch-table td:nth-child(3) { 
+#batchTable th:nth-child(4), #batchTable td:nth-child(4) { 
     width: 130px; /* Cột Status đủ rộng cho 'Downloading' */
     min-width: 130px;
 } 
-.batch-table th:nth-child(4), .batch-table td:nth-child(4) { 
+#batchTable th:nth-child(5), #batchTable td:nth-child(5) { 
     width: 120px; 
     min-width: 120px;
 } /* Progress */
+
+/* Compress Table Column Widths */
+#compressTable th:nth-child(1), #compressTable td:nth-child(1) { width: 35px; min-width: 35px; }
+#compressTable th:nth-child(2), #compressTable td:nth-child(2) { 
+    width: 100%; 
+    max-width: 0; 
+    text-overflow: ellipsis;
+}
+#compressTable th:nth-child(3), #compressTable td:nth-child(3) { width: 130px; min-width: 130px; }
+#compressTable th:nth-child(4), #compressTable td:nth-child(4) { width: 120px; min-width: 120px; }
+
+.video-thumbnail {
+    width: 64px;
+    height: 36px;
+    object-fit: cover;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    display: block;
+    margin: 0 auto;
+}
+
+.thumb-cell {
+    font-size: 18px;
+}
 
 .batch-table th {
     font-weight: 600;

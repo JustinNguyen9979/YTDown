@@ -18,8 +18,8 @@ export function GetVersionStatus() {
   return window['go']['main']['App']['GetVersionStatus']();
 }
 
-export function GetVideoTitle(arg1) {
-  return window['go']['main']['App']['GetVideoTitle'](arg1);
+export function GetVideoInfo(arg1) {
+  return window['go']['main']['App']['GetVideoInfo'](arg1);
 }
 
 export function LaunchSetupTerminal() {
@@ -28,6 +28,10 @@ export function LaunchSetupTerminal() {
 
 export function OpenFolderDialog() {
   return window['go']['main']['App']['OpenFolderDialog']();
+}
+
+export function OpenSaveFolder(arg1) {
+  return window['go']['main']['App']['OpenSaveFolder'](arg1);
 }
 
 export function RetryDownload(arg1, arg2, arg3, arg4) {

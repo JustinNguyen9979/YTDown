@@ -18,6 +18,11 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+type VideoInfo struct {
+	Title     string `json:"title"`
+	Thumbnail string `json:"thumbnail"`
+}
+
 // DownloadVideo downloads a video using yt-dlp
 func DownloadVideo(ctx context.Context, index int, url, format, quality, savePath string) error {
 	ytdlpPath := getResourcePath("yt-dlp")
@@ -25,6 +30,16 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 
 	if ytdlpPath == "" {
 		return fmt.Errorf("yt-dlp not found. Please install it or use the Setup Dependencies button.")
+	}
+
+	// Fetch metadata first to get title and thumbnail
+	info, _ := GetVideoMetadata(url)
+	if info != nil {
+		runtime.EventsEmit(ctx, "video-info", map[string]interface{}{
+			"index":     index,
+			"title":     info.Title,
+			"thumbnail": info.Thumbnail,
+		})
 	}
 
 	// Build yt-dlp arguments based on format and quality
@@ -49,16 +64,6 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-
-	/*
-		// Create debug log file
-		debugFile, _ := os.OpenFile("ytdlp_debug.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-		if debugFile != nil {
-			defer debugFile.Close()
-			debugFile.WriteString("\n--- NEW DOWNLOAD START ---\n")
-			debugFile.WriteString("URL: " + url + "\n")
-		}
-	*/
 
 	// Read progress output
 	scanner := bufio.NewScanner(stdout)
@@ -85,13 +90,6 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 
 	for scanner.Scan() {
 		line := scanner.Text()
-
-		/*
-			// Write EVERY line to debug log
-			if debugFile != nil && line != "" {
-				debugFile.WriteString(line + "\n")
-			}
-		*/
 
 		if strings.Contains(line, "[download]") {
 			if strings.Contains(line, "Destination:") {
@@ -247,14 +245,14 @@ func parseProgress(line string) map[string]interface{} {
 	return progress
 }
 
-// GetVideoMetadata fetches video title and duration
-func GetVideoMetadata(url string) (string, error) {
+// GetVideoMetadata fetches video title and thumbnail
+func GetVideoMetadata(url string) (*VideoInfo, error) {
 	ytdlpPath := getResourcePath("yt-dlp")
 	if ytdlpPath == "" {
-		return "", fmt.Errorf("yt-dlp not found")
+		return nil, fmt.Errorf("yt-dlp not found")
 	}
 
-	args := []string{"-J", "--no-warnings"}
+	args := []string{"--get-title", "--get-thumbnail", "--no-warnings"}
 	if cookiePath := getTemporaryCookieFile(); cookiePath != "" {
 		args = append(args, "--cookies", cookiePath)
 	}
@@ -263,19 +261,18 @@ func GetVideoMetadata(url string) (string, error) {
 	cmd := exec.Command(ytdlpPath, args...)
 	output, err := cmd.Output()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	var data map[string]interface{}
-	if err := json.Unmarshal(output, &data); err != nil {
-		return "", err
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) < 2 {
+		return nil, fmt.Errorf("could not extract title or thumbnail")
 	}
 
-	if title, ok := data["title"].(string); ok {
-		return title, nil
-	}
-
-	return "", fmt.Errorf("could not extract title")
+	return &VideoInfo{
+		Title:     strings.TrimSpace(lines[0]),
+		Thumbnail: strings.TrimSpace(lines[1]),
+	}, nil
 }
 
 // GetPlaylistVideos extracts all videos from a playlist

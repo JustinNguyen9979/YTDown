@@ -10,11 +10,13 @@ export function GetDefaultSavePath():Promise<string>;
 
 export function GetVersionStatus():Promise<Array<main.BinaryVersion>>;
 
-export function GetVideoTitle(arg1:string):Promise<string>;
+export function GetVideoInfo(arg1:string):Promise<main.VideoInfo>;
 
 export function LaunchSetupTerminal():Promise<void>;
 
 export function OpenFolderDialog():Promise<string>;
+
+export function OpenSaveFolder(arg1:string):Promise<void>;
 
 export function RetryDownload(arg1:string,arg2:string,arg3:string,arg4:string):Promise<string>;
 

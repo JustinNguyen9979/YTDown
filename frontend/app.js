@@ -183,11 +183,26 @@ function setupGoEvents() {
         if (window.runtime && window.runtime.EventsOn) {
             window.runtime.EventsOn('progress-update', updateProgress);
             
+            window.runtime.EventsOn('video-info', (data) => {
+                const row = document.getElementById(`batch-row-${data.index}`);
+                if (row) {
+                    const thumbCell = row.querySelector('td:nth-child(2)');
+                    const titleCell = row.querySelector('td:nth-child(3)');
+                    if (thumbCell && data.thumbnail) {
+                        thumbCell.innerHTML = `<img src="${data.thumbnail}" class="video-thumbnail" alt="thumb">`;
+                    }
+                    if (titleCell && data.title && (titleCell.innerText.startsWith('http') || titleCell.innerText.includes('...'))) {
+                         titleCell.innerText = truncateMiddle(data.title.replace(/^["']|["']$/g, ''), 40);
+                         titleCell.title = data.title;
+                    }
+                }
+            });
+
             window.runtime.EventsOn('video-title', (title) => {
                 const rows = document.querySelectorAll('#batchTableBody tr');
                 rows.forEach(row => {
-                    const statusCell = row.querySelector('td:nth-child(3)');
-                    const titleCell = row.querySelector('td:nth-child(2)');
+                    const statusCell = row.querySelector('td:nth-child(4)');
+                    const titleCell = row.querySelector('td:nth-child(3)');
                     if (statusCell && statusCell.innerText.includes('Downloading') && titleCell && titleCell.innerText.startsWith('http')) {
                          titleCell.innerText = truncateMiddle(title.replace(/^["']|["']$/g, ''), 40);
                          titleCell.title = title;
@@ -362,6 +377,14 @@ function setupBatchTab() {
         }
     });
 
+    const openFolderBtn = document.getElementById('openBatchFolderBtn');
+    if (openFolderBtn) {
+        openFolderBtn.addEventListener('click', () => {
+            const currentPath = savePathInput.value || state.savePath;
+            if (state.wailsReady) window.go.main.App.OpenSaveFolder(currentPath);
+        });
+    }
+
     formatSelect.addEventListener('change', (e) => {
         qualityRow.style.display = (e.target.value === 'MP3') ? 'none' : 'flex';
     });
@@ -382,6 +405,7 @@ function setupBatchTab() {
             row.id = `batch-row-${i}`;
             row.innerHTML = `
                 <td>${i + 1}</td>
+                <td class="thumb-cell">⏳</td>
                 <td>${url}</td>
                 <td><span class="status-icon">⏳</span> Waiting</td>
                 <td><div class="batch-progress-bar"><div class="batch-progress-fill" style="width: 0%;"></div></div></td>
@@ -472,6 +496,14 @@ function setupCompressTab() {
             state.savePath = path;
         }
     });
+    
+    const openCompressFolderBtn = document.getElementById('openCompressFolderBtn');
+    if (openCompressFolderBtn) {
+        openCompressFolderBtn.addEventListener('click', () => {
+            const currentPath = savePathInput.value || state.savePath;
+            if (state.wailsReady) window.go.main.App.OpenSaveFolder(currentPath);
+        });
+    }
     
     startBtn.addEventListener('click', async () => {
         if (state.selectedCompressFiles.length === 0) return;
@@ -761,7 +793,7 @@ function renderBatchStatusCell(index, status, details = []) {
 
     const icons = { downloading: '⏳', done: '✅', error: '❌', waiting: '⏳', retrying: '🔄' };
     const texts = { downloading: 'Downloading', done: 'Done', error: 'Error', waiting: 'Waiting', retrying: 'Retrying' };
-    const statusCell = row.querySelector('td:nth-child(3)');
+    const statusCell = row.querySelector('td:nth-child(4)');
     if (!statusCell) return;
 
     const safeDetails = details
