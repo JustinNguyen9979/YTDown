@@ -88,7 +88,8 @@ Dành cho các bạn muốn đóng góp hoặc tùy chỉnh ứng dụng:
 - Hỗ trợ tải từng video đơn lẻ hoặc toàn bộ danh sách phát (Playlist).
 - Tùy chọn định dạng xuất tệp: `MP4` (Video) hoặc `MP3` (Âm thanh).
 - Chọn chất lượng video mong muốn (1080p, 720p, 4k...).
-- **Tính năng mới:** Tự động kiểm tra và cập nhật `yt-dlp` ngay trong App.
+- Tự động kiểm tra và cập nhật `yt-dlp` ngay trong App.
+- Hiển thị Thumbnail video, xem video trực tiếp từ Thumbnails.
 
 ---
 
