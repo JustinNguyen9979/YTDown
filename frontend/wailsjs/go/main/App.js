@@ -86,6 +86,10 @@ export function SetGalleryCookie(arg1) {
   return window['go']['main']['App']['SetGalleryCookie'](arg1);
 }
 
+export function SetManualCookie(arg1) {
+  return window['go']['main']['App']['SetManualCookie'](arg1);
+}
+
 export function SetTemporaryYouTubeCookie(arg1) {
   return window['go']['main']['App']['SetTemporaryYouTubeCookie'](arg1);
 }

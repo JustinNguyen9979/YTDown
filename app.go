@@ -822,13 +822,17 @@ func (a *App) RetryDownload(url, format, quality, savePath string) string {
 	return a.StartDownload(url, format, quality, savePath)
 }
 
-func (a *App) SetTemporaryYouTubeCookie(raw string) error {
-	if err := setTemporaryYouTubeCookie(raw); err != nil {
+func (a *App) SetManualCookie(raw string) error {
+	if err := setManualCookie(raw); err != nil {
 		return err
 	}
 
 	go a.retryRestrictedBatchDownloads()
 	return nil
+}
+
+func (a *App) SetTemporaryYouTubeCookie(raw string) error {
+	return a.SetManualCookie(raw)
 }
 
 // ValidateURL checks if URL is a valid YouTube link

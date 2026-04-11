@@ -611,7 +611,7 @@ function setupGalleryTab() {
             }
 
             try {
-                await window.go.main.App.SetTemporaryYouTubeCookie(rawCookie);
+                await window.go.main.App.SetManualCookie(rawCookie);
                 state.cookieConfig.mode = 'manual';
                 state.maskedCookieValue = maskCookieValue(rawCookie);
                 state.temporaryCookieDraft = '';
@@ -1157,7 +1157,7 @@ function setupBatchTab() {
             const rawCookie = state.temporaryCookieDraft.trim();
             if (!rawCookie) {
                 if (!state.maskedCookieValue) {
-                    showError('Cookie error: please paste a YouTube Cookie header first');
+                    showError('Cookie error: please paste a Cookie header first');
                 } else {
                     cookieInline.hidden = true;
                 }
@@ -1165,7 +1165,7 @@ function setupBatchTab() {
             }
 
             try {
-                await window.go.main.App.SetTemporaryYouTubeCookie(rawCookie);
+                await window.go.main.App.SetManualCookie(rawCookie);
                 state.cookieConfig.mode = 'manual';
                 state.maskedCookieValue = maskCookieValue(rawCookie);
                 state.temporaryCookieDraft = '';

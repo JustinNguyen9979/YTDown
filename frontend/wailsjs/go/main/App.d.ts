@@ -44,6 +44,8 @@ export function SelectFolder(arg1:string):Promise<Array<string>>;
 
 export function SetGalleryCookie(arg1:string):Promise<void>;
 
+export function SetManualCookie(arg1:string):Promise<void>;
+
 export function SetTemporaryYouTubeCookie(arg1:string):Promise<void>;
 
 export function StartBatchDownload(arg1:Array<string>,arg2:string,arg3:string,arg4:string,arg5:number):Promise<string>;
