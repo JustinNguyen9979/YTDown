@@ -130,7 +130,7 @@
                 <div class="setting-row">
                     <label>Media Formats:</label>
                     <div class="custom-select-container" id="galleryFormatsContainer">
-                        <div class="custom-select-trigger" id="galleryFormatsTrigger">JPG, PNG, JPEG</div>
+                        <div class="custom-select-trigger" id="galleryFormatsTrigger">Loading...</div>
                         <div class="custom-select-options multi-select" id="galleryFormatsOptions">
                             <div class="custom-option multi" data-value="all">
                                 <input type="checkbox" id="fmt-all"> <label for="fmt-all" style="font-weight: bold;">Select All</label>
@@ -147,16 +147,7 @@
                     <input type="text" id="galleryArgs" class="url-input" placeholder="e.g. --filter 'width > 1000' --range 1-10" />
                 </div>
 
-                <div class="setting-row" style="grid-column: span 3; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 20px; margin-top: 4px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <input type="checkbox" id="galleryUgoiraToWebm" checked style="width: 16px; height: 16px; cursor: pointer;">
-                        <label for="galleryUgoiraToWebm" style="text-transform: none; cursor: pointer; letter-spacing: normal; font-size: 13px; white-space: nowrap;">Convert Pixiv Ugoira to WebM</label>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <input type="checkbox" id="galleryArchive" style="width: 16px; height: 16px; cursor: pointer;">
-                        <label for="galleryArchive" style="text-transform: none; cursor: pointer; letter-spacing: normal; font-size: 13px; white-space: nowrap;">Use Archive (Don't redownload)</label>
-                    </div>
-                </div>
+                <div id="galleryOptionRows" class="setting-row" style="grid-column: span 3; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 20px; margin-top: 4px;"></div>
             </div>
 
             <div class="save-path">
@@ -190,10 +181,7 @@
                 </div>
                 <div class="setting-row">
                     <label>Selection:</label>
-                    <select id="selectionMode">
-                        <option value="file">Files</option>
-                        <option value="folder">Folder</option>
-                    </select>
+                    <select id="selectionMode"></select>
                 </div>
                 <div class="setting-row">
                     <label>&nbsp;</label>
@@ -224,12 +212,11 @@
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <label id="customQualityLabel">Quality: 80 - High Quality</label>
                     </div>
-                    <input type="range" id="customQualitySlider" min="1" max="100" value="80" style="width: 100%; margin: 10px 0;">
+                    <input type="range" id="customQualitySlider" min="1" max="100" value="80">
                 </div>
 
                 <div class="setting-row full-width" id="slowPresetContainer" style="grid-column: span 2; flex-direction: row; align-items: center; gap: 10px;">
-                    <input type="checkbox" id="useSlowPreset" checked style="width: 16px; height: 16px; cursor: pointer;">
-                    <label for="useSlowPreset" style="text-transform: none; cursor: pointer; letter-spacing: normal; font-size: 13px;">Slower for better compression (Recommended)</label>
+                    <div id="compressOptionRows"></div>    
                 </div>
             </div>
 

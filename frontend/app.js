@@ -197,6 +197,7 @@ async function initializeApp() {
     populateSelectOptions();
     renderTabs();
     renderTableHeaders();
+    renderOptionRows();
     
     // Load default save path and cookie config
     if (state.wailsReady) {
@@ -310,7 +311,7 @@ function setupCookieDropdown() {
         btn.onclick = (e) => {
             e.stopPropagation();
             const willShow = menu.hidden;
-            // Reposition menu relative to the clicked button's container
+            closeAllDropdowns();
             const container = btn.parentElement;
             container.appendChild(menu);
             menu.hidden = !willShow;
@@ -554,8 +555,9 @@ function setupGalleryTab() {
 
         document.getElementById('galleryFormatsTrigger').onclick = (e) => {
             e.stopPropagation();
-            document.querySelectorAll('.custom-select-container').forEach(c => c.classList.remove('open'));
-            document.getElementById('galleryFormatsContainer').classList.toggle('open');
+            const isOpen = document.getElementById('galleryFormatsContainer').classList.contains('open');
+            closeAllDropdowns(); 
+            if (!isOpen) document.getElementById('galleryFormatsContainer').classList.add('open');
         };
 
         updateTriggerText();
@@ -1017,6 +1019,14 @@ function setupTabs() {
     });
 }
 
+function closeAllDropdowns() {
+    const cookieMenu = document.getElementById('cookieDropdownMenu');
+    if (cookieMenu) cookieMenu.hidden = true;
+    document.querySelectorAll('.custom-select-container').forEach(c => c.classList.remove('open'));
+    const galleryFormats = document.getElementById('galleryFormatsContainer');
+    if (galleryFormats) galleryFormats.classList.remove('open');
+}
+
 function refreshCustomSelectStates() {
     document.querySelectorAll('.custom-select-container').forEach(container => {
         const select = container.querySelector('select');
@@ -1440,7 +1450,7 @@ function initCustomSelects() {
             if (select.disabled) return;
             e.stopPropagation();
             const isOpen = container.classList.contains('open');
-            document.querySelectorAll('.custom-select-container').forEach(c => c.classList.remove('open'));
+            closeAllDropdowns(); // ← thay thế dòng forEach cũ
             if (!isOpen) container.classList.add('open');
         });
     });
@@ -1782,6 +1792,36 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+// Thêm vào app.js - gọi trong initializeApp()
+function renderOptionRows() {
+  const galleryOptions = [
+    { id: 'galleryUgoiraToWebm', label: 'Convert Pixiv Ugoira to WebM', checked: true },
+    { id: 'galleryArchive',      label: "Use Archive (Don't redownload)", checked: false }
+  ];
+  const galleryContainer = document.getElementById('galleryOptionRows');
+  if (galleryContainer) {
+    galleryContainer.innerHTML = galleryOptions.map(opt => `
+      <label class="option-row">
+        <input type="checkbox" id="${opt.id}" class="option-checkbox" ${opt.checked ? 'checked' : ''}>
+        <span>${opt.label}</span>
+      </label>
+    `).join('');
+  }
+
+  const compressOptions = [
+    { id: 'useSlowPreset', label: 'Slower for better compression (Recommended)', checked: true }
+  ];
+  const compressContainer = document.getElementById('compressOptionRows');
+  if (compressContainer) {
+    compressContainer.innerHTML = compressOptions.map(opt => `
+      <label class="option-row">
+        <input type="checkbox" id="${opt.id}" class="option-checkbox" ${opt.checked ? 'checked' : ''}>
+        <span>${opt.label}</span>
+      </label>
+    `).join('');
+  }
+}
 
 function renderInfoTab() {
   const el = document.getElementById('infoContent');

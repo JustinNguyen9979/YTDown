@@ -1185,6 +1185,26 @@ select.hidden-select {
     color: var(--accent-blue);
 }
 
+.option-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.option-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+#customQualitySlider {
+  width: 100%;
+  margin: 10px 0;
+}
+
 /* Keyboard shortcuts styling */
 kbd {
     display: inline-block;
@@ -1225,3 +1245,4 @@ kbd {
 #info.tab-content.active::-webkit-scrollbar-thumb:hover {
     background-color: var(--accent-blue);
 }
+
