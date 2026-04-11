@@ -16,12 +16,7 @@
         <div id="update-banner" class="update-banner" style="display: none;"></div>
 
         <!-- Tab Switcher -->
-        <div class="tabs">
-            <button type="button" class="tab-btn active" data-tab="batch">Download Video</button>
-            <button type="button" class="tab-btn" data-tab="gallery">Download Images</button>
-            <button type="button" class="tab-btn" data-tab="compress">Compress</button>
-            <button type="button" class="tab-btn" data-tab="info" style="margin-left: auto;">ℹ️ Info</button>
-        </div>
+        <div class="tabs" id="mainTabs"></div>
 
         <!-- Download Video Tab -->
         <div id="batch" class="tab-content active">
@@ -59,37 +54,17 @@
             <div class="settings">
                 <div class="setting-row">
                     <label>Format:</label>
-                    <select id="batchFormatSelect">
-                        <option value="MP4">MP4</option>
-                        <option value="MP3">MP3</option>
-                    </select>
+                    <select id="batchFormatSelect"></select>
                 </div>
 
                 <div class="setting-row" id="batchQualityRow">
                     <label>Quality:</label>
-                    <select id="batchQualitySelect">
-                        <option value="Best Quality">Best Quality</option>
-                        <option value="1080p">1080p</option>
-                        <option value="720p">720p</option>
-                        <option value="480p">480p</option>
-                        <option value="360p">360p</option>
-                    </select>
+                    <select id="batchQualitySelect"></select>
                 </div>
 
                 <div class="setting-row setting-row-right" id="batchThreadsRow">
                     <label>Threads:</label>
-                    <select id="batchThreadsSelect">
-                        <option value="1">1</option>
-                        <option value="2">2</option>
-                        <option value="3" selected>3</option>
-                        <option value="4">4</option>
-                        <option value="5">5</option>
-                        <option value="6">6</option>
-                        <option value="7">7</option>
-                        <option value="8">8</option>
-                        <option value="9">9</option>
-                        <option value="10">10</option>
-                    </select>
+                    <select id="batchThreadsSelect"></select>
                 </div>
             </div>
 
@@ -111,15 +86,6 @@
             <!-- Download Progress -->
             <div class="batch-progress">
                 <table class="batch-table" id="batchTable">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Thumbnail</th>
-                            <th>Video Title</th>
-                            <th>Status</th>
-                            <th>Progress</th>
-                        </tr>
-                    </thead>
                     <tbody id="batchTableBody"></tbody>
                 </table>
                 <div class="batch-summary" id="batchSummary"></div>
@@ -153,31 +119,12 @@
             <div class="settings">
                 <div class="setting-row">
                     <label>Threads:</label>
-                    <select id="galleryThreadsSelect">
-                        <option value="1">1</option>
-                        <option value="2">2</option>
-                        <option value="3" selected>3</option>
-                        <option value="4">4</option>
-                        <option value="5">5</option>
-                        <option value="6">6</option>
-                        <option value="7">7</option>
-                        <option value="8">8</option>
-                        <option value="9">9</option>
-                        <option value="10">10</option>
-                    </select>
+                    <select id="galleryThreadsSelect"></select>
                 </div>
 
                 <div class="setting-row" id="galleryBrowserRow" style="display: none;">
                     <label>Cookies from Browser:</label>
-                    <select id="galleryBrowserSelect">
-                        <option value="">None</option>
-                        <option value="chrome">Chrome</option>
-                        <option value="firefox">Firefox</option>
-                        <option value="safari">Safari</option>
-                        <option value="edge">Edge</option>
-                        <option value="opera">Opera</option>
-                        <option value="vivaldi">Vivaldi</option>
-                    </select>
+                    <select id="galleryBrowserSelect"></select>
                 </div>
 
                 <div class="setting-row">
@@ -229,14 +176,6 @@
             <!-- Download Progress -->
             <div class="batch-progress">
                 <table class="batch-table" id="galleryTable">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Gallery URL / Title</th>
-                            <th>Status</th>
-                            <th>Progress</th>
-                        </tr>
-                    </thead>
                     <tbody id="galleryTableBody"></tbody>
                 </table>
             </div>
@@ -247,10 +186,7 @@
             <div class="compress-controls-row">
                 <div class="setting-row">
                     <label>Type:</label>
-                    <select id="compressType">
-                        <option value="image" selected>Image</option>
-                        <option value="video">Video</option>
-                    </select>
+                    <select id="compressType"></select>
                 </div>
                 <div class="setting-row">
                     <label>Selection:</label>
@@ -267,14 +203,6 @@
 
             <div class="file-list-container" style="margin-top: 10px;">
                 <table class="batch-table" id="compressTable">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>File Name</th>
-                            <th>Status</th>
-                            <th>Progress</th>
-                        </tr>
-                    </thead>
                     <tbody id="compressTableBody"></tbody>
                 </table>
             </div>
@@ -282,12 +210,7 @@
             <div class="settings" style="margin-top: 16px;">
                 <div class="setting-row">
                     <label>Quality Level:</label>
-                    <select id="compressQuality">
-                        <option value="medium">Medium (Balanced)</option>
-                        <option value="high">High (Keep Quality)</option>
-                        <option value="low">Low (Smallest Size)</option>
-                        <option value="custom">Custom Quality</option>
-                    </select>
+                    <select id="compressQuality"></select>
                 </div>
 
                 <div class="setting-row">
@@ -325,55 +248,7 @@
 
         <!-- Info Tab -->
         <div id="info" class="tab-content">
-            <div class="info-container">
-                <div class="info-section">
-                    <h3>Version</h3>
-                    <p>2026.04.10</p>
-                </div>
-
-                <div class="info-section">
-                    <h3>Features</h3>
-                    <ul>
-                        <li>Download videos from YouTube, TikTok, Facebook, and more</li>
-                        <li>Batch download multiple videos</li>
-                        <li>Compress images and videos efficiently</li>
-                        <li>Support for restricted/age-gated content (with cookie)</li>
-                    </ul>
-                </div>
-
-                <div class="info-section">
-                    <h3>Tools Used</h3>
-                    <ul>
-                        <li><strong>yt-dlp</strong> - Video extraction engine</li>
-                        <li><strong>FFmpeg</strong> - Media processing</li>
-                    </ul>
-                </div>
-
-                <div class="info-section">
-                    <h3>Author</h3>
-                    <ul>
-                        <li><p>Justin Nguyen</p></li>
-                        <li><p>Telegram: Justin_Nguyen_SG</p></li>
-                    </ul>
-                </div>
-
-                <div class="info-section">
-                    <h3>Support & Donate</h3>
-                    <p style="margin-bottom: 12px;">If you find YTDown useful, please consider supporting the developer:</p>
-                    <ul>
-                        <li><strong>Bank:</strong> MB Bank</li>
-                        <li><strong>Account:</strong> <code style="background: var(--bg-secondary); padding: 2px 6px; border-radius: 3px; font-family: monospace;">079 88888 88888</code></li>
-                        <li><strong>Account Holder:</strong> Nguyen Duc Huy</li>
-                        <li><strong>PayPal:</strong> duchuy_1997@hotmail.com</li>
-                    </ul>
-                </div>
-
-                <div class="info-footer">
-                    <p style="font-size: 12px; color: var(--text-secondary); margin-top: 20px;">
-                        If YTDown helps with your work, please buy me a coffee ☕
-                    </p>
-                </div>
-            </div>
+            <div id="infoContent"></div>
         </div>
     </div>
 

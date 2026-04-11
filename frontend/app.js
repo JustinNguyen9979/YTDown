@@ -31,6 +31,117 @@ const state = {
 let wailsWaitAttempts = 0;
 const MAX_WAILS_WAIT_ATTEMPTS = 100; // 10 seconds max (100 * 100ms)
 
+function populateSelectOptions() {
+  // Threads array dùng chung cho 2 select
+  const threads = Array.from({ length: 10 }, (_, i) => ({
+    value: String(i + 1),
+    text: String(i + 1)
+  }));
+
+  const selectConfig = [
+    {
+      id: 'batchFormatSelect',
+      defaultValue: 'MP4',
+      options: [
+        { value: 'MP4',  text: 'MP4' },
+        { value: 'MP3',  text: 'MP3' }
+      ]
+    },
+    {
+      id: 'batchQualitySelect',
+      defaultValue: 'Best Quality',
+      options: [
+        { value: 'Best Quality', text: 'Best Quality' },
+        { value: '1080p',        text: '1080p' },
+        { value: '720p',         text: '720p' },
+        { value: '480p',         text: '480p' },
+        { value: '360p',         text: '360p' }
+      ]
+    },
+    { id: 'batchThreadsSelect',   defaultValue: '3', options: threads },
+    { id: 'galleryThreadsSelect', defaultValue: '3', options: threads },
+    {
+      id: 'galleryBrowserSelect',
+      defaultValue: '',
+      options: [
+        { value: '',         text: 'None'    },
+        { value: 'chrome',   text: 'Chrome'  },
+        { value: 'firefox',  text: 'Firefox' },
+        { value: 'safari',   text: 'Safari'  },
+        { value: 'edge',     text: 'Edge'    },
+        { value: 'opera',    text: 'Opera'   },
+        { value: 'vivaldi',  text: 'Vivaldi' }
+      ]
+    },
+    {
+      id: 'compressType',
+      defaultValue: 'image',
+      options: [
+        { value: 'image', text: 'Image' },
+        { value: 'video', text: 'Video' }
+      ]
+    },
+    {
+      id: 'selectionMode',
+      defaultValue: 'file',
+      options: [
+        { value: 'file',   text: 'Files'  },
+        { value: 'folder', text: 'Folder' }
+      ]
+    },
+    {
+      id: 'compressQuality',
+      defaultValue: 'medium',
+      options: [
+        { value: 'medium', text: 'Medium (Balanced)'  },
+        { value: 'high',   text: 'High (Keep Quality)' },
+        { value: 'low',    text: 'Low (Smallest Size)' },
+        { value: 'custom', text: 'Custom Quality'      }
+      ]
+    }
+  ];
+
+  selectConfig.forEach(({ id, options, defaultValue }) => {
+    const select = document.getElementById(id);
+    if (!select) return;
+    select.innerHTML = options
+      .map(opt =>
+        `<option value="${opt.value}"${opt.value === defaultValue ? ' selected' : ''}>${opt.text}</option>`
+      )
+      .join('');
+  });
+}
+
+function renderTableHeaders() {
+  const tableHeaders = {
+    batchTable:    ['#', 'Thumbnail', 'Video Title', 'Status', 'Progress'],
+    galleryTable:  ['#', 'Image Title', 'Status', 'Progress'],
+    compressTable: ['#', 'File Name', 'Status', 'Progress']
+  };
+
+  Object.entries(tableHeaders).forEach(([tableId, headers]) => {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const thead = document.createElement('thead');
+    thead.innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
+    table.prepend(thead);
+  });
+}
+
+function renderTabs() {
+  const tabs = [
+    { id: 'batch',    label: 'Download Video' },
+    { id: 'gallery',  label: 'Download Images' },
+    { id: 'compress', label: 'Compress' },
+    { id: 'info',     label: 'ℹ️ Info', style: 'margin-left: auto;' }
+  ];
+
+  document.getElementById('mainTabs').innerHTML = tabs.map((tab, i) =>
+    `<button type="button" class="tab-btn${i === 0 ? ' active' : ''}" 
+      data-tab="${tab.id}"${tab.style ? ` style="${tab.style}"` : ''}>${tab.label}</button>`
+  ).join('');
+}
+
 function truncateMiddle(fullStr, strLen, separator) {
     if (fullStr.length <= strLen) return fullStr;
     
@@ -82,6 +193,10 @@ function waitForWails() {
 
 async function initializeApp() {
     console.log('[BOOT] App initialization started');
+
+    populateSelectOptions();
+    renderTabs();
+    renderTableHeaders();
     
     // Load default save path and cookie config
     if (state.wailsReady) {
@@ -122,6 +237,7 @@ async function initializeApp() {
     setupCompressTab();
     setupGoEvents();
     setupWindowAutoHug();
+    renderInfoTab();
     setupInfoTab();
     
     if (state.wailsReady) {
@@ -1666,3 +1782,77 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+function renderInfoTab() {
+  const el = document.getElementById('infoContent');
+  if (!el) return;
+
+  const features = [
+    '🎬 Batch download videos from YouTube, TikTok, Facebook, Instagram and more',
+    '🖼️ Download image galleries from Imgur, Twitter, Pixiv and more',
+    '⚡ Multi-threaded downloading with up to 10 concurrent threads',
+    '🗜️ Compress images and videos to reduce file size',
+    '🍪 Cookie support for restricted or age-gated content',
+    '🔄 Auto-update to the latest version automatically'
+  ];
+
+  const tools = [
+    { name: 'yt-dlp',      desc: 'Video extraction engine' },
+    { name: 'FFmpeg',      desc: 'Media processing & compression' },
+    { name: 'gallery-dl',  desc: 'Image gallery downloader' }
+  ];
+
+  el.innerHTML = `
+    <div class="info-container">
+
+      <div class="info-header">
+        <h2>🎬 YTDown</h2>
+        <p class="info-tagline">Fast & simple media downloader for your desktop</p>
+        <p class="info-tagline" style="margin-top:6px;">
+          Version: <code id="appVersion">Loading...</code>
+        </p>
+      </div>
+
+      <div class="info-section">
+        <h3>✨ Features</h3>
+        <ul>
+          ${features.map(f => `<li>${f}</li>`).join('')}
+        </ul>
+      </div>
+
+      <div class="info-section">
+        <h3>🔧 Built with</h3>
+        <ul>
+          ${tools.map(t => `<li><strong>${t.name}</strong> — ${t.desc}</li>`).join('')}
+        </ul>
+      </div>
+
+      <div class="info-section">
+        <h3>👤 Author</h3>
+        <ul>
+          <li><strong>Justin Nguyen</strong></li>
+          <li>Telegram: <code>Justin_Nguyen_SG</code></li>
+        </ul>
+      </div>
+
+      <div class="info-section">
+        <h3>💛 Support & Donate</h3>
+        <p style="margin-bottom:10px;">If YTDown helps with your work, please buy me a coffee ☕</p>
+        <ul>
+          <li><strong>Bank:</strong> MB Bank</li>
+          <li><strong>Account:</strong> <code>079 88888 88888</code></li>
+          <li><strong>Holder:</strong> Nguyen Duc Huy</li>
+          <li><strong>PayPal:</strong> <code>duchuy_1997@hotmail.com</code></li>
+        </ul>
+      </div>
+
+      <div class="info-footer">
+        <p style="color: var(--text-secondary); font-size: 13px;">
+          Made with ❤️ by Justin Nguyen &nbsp;·&nbsp; 
+          <span id="appVersion-year">2026</span>
+        </p>
+      </div>
+
+    </div>
+  `;
+}
