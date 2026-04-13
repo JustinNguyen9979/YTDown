@@ -63,47 +63,162 @@ body {
     letter-spacing: -0.5px;
 }
 
-/* Update Banner */
-.update-banner {
-    background: rgba(10, 132, 255, 0.1);
-    border: 1px solid var(--accent-blue);
-    padding: 12px 16px;
-    border-radius: 10px;
-    margin-bottom: 20px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 13px;
-    color: var(--text-primary);
-    animation: fadeIn 0.3s ease;
+/* ── Update Banner ─────────────────────────────── */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+@keyframes fadeInDown {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 
+.update-banner {
+    background: linear-gradient(135deg,
+        rgba(10, 132, 255, 0.10) 0%,
+        rgba(90, 200, 250, 0.05) 100%);
+    border: 1px solid rgba(10, 132, 255, 0.30);
+    box-shadow: 0 0 0 1px rgba(10, 132, 255, 0.06) inset,
+                0 4px 20px rgba(10, 132, 255, 0.08);
+    padding: 10px 14px;
+    border-radius: 12px;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    animation: fadeInDown 0.3s ease;
+}
+
+/* Flatten lớp wrapper lồng nhau */
+.update-items-list,
+.update-item,
+.update-item--app { display: contents; }
+
+/* Badge "NEW" */
+.update-badge {
+    display: inline-block;
+    background: rgba(10, 132, 255, 0.25);
+    color: #5ac8fa;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    vertical-align: middle;
+    margin-right: 5px;
+}
+
+.update-msg {
+    flex: 1;
+    min-width: 0;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-primary);
+}
+
+.update-msg strong {
+    color: #fff;
+    font-weight: 600;
+}
+
+.version-hint {
+    opacity: 0.4;
+    font-size: 11px;
+    margin-left: 4px;
+}
+
+.update-msg--success {
+    color: #30d158;
+    font-size: 13px;
+}
+
+.update-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+/* ── Nút Update chính ── */
 .upgrade-btn {
-    padding: 6px 12px;
-    background: var(--accent-blue);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: #0a84ff;
     border: none;
-    border-radius: 6px;
-    color: white;
+    border-radius: 8px;
+    color: #fff;
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s ease;
+    white-space: nowrap;
+    box-shadow: 0 2px 10px rgba(10, 132, 255, 0.45);
+    transition: background   0.18s ease,
+                box-shadow   0.18s ease,
+                transform    0.15s ease,
+                filter       0.18s ease;
+    -webkit-app-region: no-drag;
 }
 
 .upgrade-btn:hover {
-    background: #0071d5;
+    background: #1a8fff;
+    filter: brightness(1.15);
+    box-shadow: 0 4px 18px rgba(10, 132, 255, 0.6);
     transform: scale(1.05);
+    cursor: pointer;
+}
+
+.upgrade-btn:active {
+    transform: scale(0.96);
+    filter: brightness(0.95);
 }
 
 .upgrade-btn:disabled {
-    opacity: 0.6;
+    opacity: 0.5;
     cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+    filter: none;
 }
 
-.update-banner--multi {
-    flex-direction: row;
-    align-items: flex-start;
-    gap: 12px;
+/* Icon SVG trong nút — spin khi disabled (đang update) */
+.upgrade-icon {
+    flex-shrink: 0;
+    transform-box: fill-box;      /* rotate quanh chính bản thân SVG */
+    transform-origin: center;     /* tâm xoay = giữa icon */
+}
+.upgrade-btn:disabled .upgrade-icon {
+    animation: spin 0.9s linear infinite;
+}
+
+/* ── Nút ✕ đóng banner ── */
+.banner-close-btn {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 5px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.18s ease;
+    -webkit-app-region: no-drag;
+}
+
+.banner-close-btn:hover {
+    background: rgba(255,59,48,0.18);
+    border-color: rgba(255,59,48,0.4);
+    color: #ff3b30;
+    transform: scale(1.1);
 }
 
 /* Danh sách các update items */

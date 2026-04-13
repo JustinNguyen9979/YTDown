@@ -816,22 +816,27 @@ async function checkUpdates() {
                 </div>
             </div>`;
         } else {
-            const { current, latest, releaseUrl } = u.data;
-            const releaseLink = releaseUrl
-                ? `<a class="upgrade-btn upgrade-btn--ghost" href="${releaseUrl}" target="_blank" rel="noopener">Release Notes ↗</a>`
-                : '';
+            const { current, latest } = u.data;
             return `
-            <div class="update-item update-item--app" data-tool="ytdown-app">
-                <span class="update-msg">
-                    🆕 <strong>YTDown</strong> v${latest} available
-                    <span class="version-hint">(current: v${current})</span>
-                </span>
-                <div class="update-actions">
-                    <button class="upgrade-btn" id="upgradeBtn-ytdown-app">🔄 Auto Update</button>
-                    <button class="upgrade-btn upgrade-btn--secondary" id="brewCopyBtn">📋 brew upgrade</button>
-                    ${releaseLink}
+                <div class="update-item" data-tool="ytdown-app">
+                    <span class="update-msg">
+                        <span class="update-badge">NEW</span>
+                        <strong>YTDown</strong> v${latest}
+                        <span class="version-hint">(current: ${current})</span>
+                    </span>
+                    <div class="update-actions">
+                        <button id="upgradeBtn-ytdown-app" class="upgrade-btn">
+                            <svg class="upgrade-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 2v6h-6"/>
+                                <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+                                <path d="M3 22v-6h6"/>
+                                <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+                            </svg>
+                            Update
+                        </button>
+                    </div>
                 </div>
-            </div>`;
+            `;
         }
     }).join('');
 
@@ -840,7 +845,7 @@ async function checkUpdates() {
         <button class="banner-close-btn" id="bannerDismiss" title="Dismiss">✕</button>
     `;
     banner.style.display = 'flex';
-    banner.classList.add('update-banner--multi');
+    banner.classList.remove('update-banner--multi');
 
     // ── 4. Nút close banner ────────────────────────────────────
     document.getElementById('bannerDismiss')?.addEventListener('click', () => {
@@ -882,7 +887,20 @@ async function checkUpdates() {
     document.getElementById('upgradeBtn-ytdown-app')?.addEventListener('click', async () => {
         const item = banner.querySelector('[data-tool="ytdown-app"]');
         const btn = document.getElementById('upgradeBtn-ytdown-app');
-        if (btn) { btn.disabled = true; btn.textContent = 'Preparing...'; }
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = `
+                <svg class="upgrade-icon" width="13" height="13" viewBox="0 0 24 24"
+                    fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 2v6h-6"/>
+                    <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+                    <path d="M3 22v-6h6"/>
+                    <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+                </svg>
+                Updating...
+            `;
+        }
 
         // Lắng nghe event từ backend khi bắt đầu tải
         if (window.runtime && window.runtime.EventsOn) {
@@ -906,36 +924,8 @@ async function checkUpdates() {
         } catch (err) {
             // Auto update thất bại → fallback hướng dẫn brew
             if (item) {
-                item.innerHTML = `
-                <span class="update-msg">
-                    ⚠️ Auto update failed. Run in Terminal:
-                    <code class="brew-cmd">brew upgrade --cask ytdown</code>
-                </span>
-                <div class="update-actions">
-                    <button class="upgrade-btn upgrade-btn--secondary" id="brewCopyBtn2">📋 Copy Command</button>
-                </div>`;
-                document.getElementById('brewCopyBtn2')?.addEventListener('click', () => {
-                    navigator.clipboard.writeText('brew upgrade --cask ytdown');
-                    const b = document.getElementById('brewCopyBtn2');
-                    if (b) { b.textContent = '✅ Copied!'; setTimeout(() => { b.textContent = '📋 Copy Command'; }, 2000); }
-                });
             }
         }
-    });
-
-    // ── 7. Copy brew command ────────────────────────────────────
-    document.getElementById('brewCopyBtn')?.addEventListener('click', () => {
-        navigator.clipboard.writeText('brew upgrade --cask ytdown').then(() => {
-            const btn = document.getElementById('brewCopyBtn');
-            if (btn) {
-                const orig = btn.textContent;
-                btn.textContent = '✅ Copied!';
-                setTimeout(() => { btn.textContent = orig; }, 2000);
-            }
-        }).catch(() => {
-            const btn = document.getElementById('brewCopyBtn');
-            if (btn) btn.textContent = 'brew upgrade --cask ytdown';
-        });
     });
 }
 
@@ -2112,7 +2102,7 @@ function showDependencyWarning(missingTools) {
         <button class="banner-close-btn" id="depBannerDismiss" title="Dismiss">✕</button>
     `;
     banner.style.display = 'flex';
-    banner.classList.add('update-banner--multi');
+    banner.classList.remove('update-banner--multi');
 
     document.getElementById('depBannerDismiss')?.addEventListener('click', () => {
         banner.style.display = 'none';
