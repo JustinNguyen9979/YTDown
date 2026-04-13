@@ -680,7 +680,7 @@ function setupGalleryTab() {
                 <td>${i + 1}</td>
                 <td title="${escapeHtml(url)}">${escapeHtml(truncateMiddle(url, 40))}</td>
                 <td><span class="status-icon">⏳</span> Waiting</td>
-                <td><div class="batch-progress-bar"><div class="batch-progress-fill" style="width: 0%;"></div></div></td>
+                <td><div class="progress-cell-wrap"><div class="batch-progress-bar" style="flex:1"><div class="batch-progress-fill" style="width: 0%;"></div></div><span class="progress-pct">0%</span></div></td>
             `;
             tbody.appendChild(row);
         });
@@ -1210,7 +1210,15 @@ function setBatchProgressValue(index, percentage, color) {
     if (!fill) return;
     fill.style.width = `${percentage}%`;
     fill.style.backgroundColor = color || '';
+
+    // ✅ Cập nhật label %
+    const pct = row.querySelector('.progress-pct');
+    if (pct) {
+        pct.textContent = `${Math.round(percentage)}%`;
+        pct.className = 'progress-pct' + (percentage >= 100 ? ' done' : '');
+    }
 }
+
 
 function applyBatchControlState(status) {
     state.batchSessionStatus = status;
@@ -1409,7 +1417,7 @@ function setupBatchTab() {
                 <td class="thumb-cell">⏳</td>
                 <td>${url}</td>
                 <td><span class="status-icon">⏳</span> Waiting</td>
-                <td><div class="batch-progress-bar"><div class="batch-progress-fill" style="width: 0%;"></div></div></td>
+                <td><div class="progress-cell-wrap"><div class="batch-progress-bar" style="flex:1"><div class="batch-progress-fill" style="width: 0%;"></div></div><span class="progress-pct">0%</span></div></td>
             `;
             tbody.appendChild(row);
         });
@@ -1694,6 +1702,14 @@ function updateProgress(data) {
         if (row) {
             const fill = row.querySelector('.batch-progress-fill');
             if (fill) fill.style.width = percentage + '%';
+
+            // ✅ Cập nhật label %
+            const pct = row.querySelector('.progress-pct');
+            if (pct) {
+                pct.textContent = `${Math.round(percentage)}%`;
+                pct.className = 'progress-pct' + (percentage >= 100 ? ' done' : '');
+            }
+
             if (percentage >= 100) renderBatchStatusCell(index, 'done', ['Download complete.']);
             else renderBatchStatusCell(index, 'downloading', [`${Math.round(percentage)}% complete`]);
         }

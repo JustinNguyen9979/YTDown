@@ -177,6 +177,21 @@ body {
   animation: spin 0.5s linear infinite; /* ← Xoay rất nhanh khi đang update */
 }
 
+/* Pulse glow xanh quanh nút để kéo attention */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 2px 10px rgba(10, 132, 255, 0.45); }
+  50%       { box-shadow: 0 2px 22px rgba(10, 132, 255, 0.85), 0 0 0 3px rgba(10, 132, 255, 0.2); }
+}
+
+.upgrade-btn:not(:disabled) {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* Tắt glow khi đang xử lý để tập trung vào spin */
+.upgrade-btn:disabled {
+  animation: none;
+}
+
 /* Icon SVG trong nút — spin khi disabled (đang update) */
 .upgrade-icon {
   flex-shrink: 0;
@@ -850,16 +865,6 @@ select:focus {
     transform: translateY(0);
 }
 
-/* Progress Section */
-.progress-section {
-    padding: 16px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-}
-
 .video-info {
     font-size: 13px;
     color: var(--text-secondary);
@@ -867,21 +872,64 @@ select:focus {
     word-break: break-word;
 }
 
+/* ── Progress Bar — Option A: Glowing Shimmer ───────── */
+@keyframes shimmer-flow {
+  0%   { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
 .progress-bar {
-    width: 100%;
-    height: 4px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 2px;
-    overflow: hidden;
-    margin-bottom: 8px;
+  width: 100%;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-bottom: 8px;
 }
 
 .progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, var(--accent-blue), #5ac8fa);
-    width: 0%;
-    transition: width 0.3s ease;
-    border-radius: 2px;
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #0a84ff 0%, #5ac8fa 50%, #0a84ff 100%);
+  background-size: 200% 100%;
+  width: 0%;
+  animation: shimmer-flow 1.8s linear infinite;
+  box-shadow: 0 0 10px rgba(10, 132, 255, 0.65), 0 0 3px rgba(90, 200, 250, 0.5);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Khi done — chuyển sang xanh lá */
+.progress-fill.done {
+  background: linear-gradient(90deg, #28a745, #34c759);
+  box-shadow: 0 0 10px rgba(52, 199, 89, 0.55);
+  animation: none;
+}
+
+/* Khi error — đỏ */
+.progress-fill.error {
+  background: linear-gradient(90deg, #ff3b30, #ff6b60);
+  box-shadow: 0 0 10px rgba(255, 59, 48, 0.55);
+  animation: none;
+}
+
+/* ── Batch Table Progress ──────────────────────────── */
+.batch-progress-bar {
+  width: 100%;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.batch-progress-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #0a84ff, #5ac8fa);
+  background-size: 200% 100%;
+  width: 0%;
+  animation: shimmer-flow 1.8s linear infinite;
+  box-shadow: 0 0 6px rgba(10, 132, 255, 0.5);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .progress-text {
@@ -1163,21 +1211,6 @@ select:focus {
 @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.6; }
-}
-
-.batch-progress-bar {
-    width: 100%;
-    height: 3px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 2px;
-    overflow: hidden;
-}
-
-.batch-progress-fill {
-    height: 100%;
-    background: var(--accent-blue);
-    width: 0%;
-    transition: width 0.3s ease;
 }
 
 .batch-summary {
@@ -1527,3 +1560,24 @@ kbd {
   transform: translateY(0px);
   box-shadow: 0 2px 6px rgba(255, 94, 91, 0.3);
 }
+
+/* ── Progress % Label ──────────────────────────────── */
+.progress-cell-wrap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.progress-pct {
+  font-size: 11px;
+  color: #5ac8fa;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  min-width: 30px;
+  text-align: right;
+  flex-shrink: 0;
+  transition: color 0.3s ease;
+}
+
+.progress-pct.done  { color: #34c759; }
+.progress-pct.error { color: #ff453a; }
