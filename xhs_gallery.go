@@ -29,6 +29,9 @@ func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, opti
 	})
 
 	targetDir := options.SavePath
+	if info.Author != "" {
+		targetDir = filepath.Join(options.SavePath, sanitizeFolderName(info.Author))
+	}
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return fmt.Errorf("create xhs output dir failed: %w", err)
 	}
@@ -62,6 +65,7 @@ func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, opti
 			"speed":      fmt.Sprintf("Downloaded %d/%d files", i+1, len(urls)),
 			"eta":        "Downloading...",
 		})
+
 	}
 
 	runtime.EventsEmit(ctx, "gallery-complete", map[string]interface{}{

@@ -36,7 +36,7 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 
 	args := []string{
 		"--destination", options.SavePath,
-		"-o", `directory=["{uploader|creator|title|category}"]`,
+		"-o", `directory=["{username|user|uploader|creator|title|category}"]`,
 	}
 
 	if options.UgoiraToWebm {
@@ -58,14 +58,14 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 		LogInfo("[GDL] Skipping cookies for TikTok to avoid 403 Forbidden errors")
 	}
 
+	cookieArgs := []string{}
 	if useCookies {
-		// Add cookie arguments from the unified manager
-		if cookieArgs := manager.GetCookieArgs(ctx, "gallery-dl", resolvedURL); len(cookieArgs) > 0 {
-			args = append(args, cookieArgs...)
+		if ca := manager.GetCookieArgs(ctx, "gallery-dl", resolvedURL); len(ca) > 0 {
+			cookieArgs = ca
 		} else if options.Browser != "" {
-			// Fallback to legacy option only if global cookie is not set
-			args = append(args, "--cookies-from-browser", options.Browser)
+			cookieArgs = []string{"--cookies-from-browser", options.Browser}
 		}
+		args = append(args, cookieArgs...)
 	}
 
 	// Force High Quality/Original for common sites
@@ -108,6 +108,13 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 
 	LogInfo("[GDL] Running command: %s with args: %s", gallerydlPath, strings.Join(args, " "))
 
+	if title := getGalleryTitle(ctx, gallerydlPath, resolvedURL, userAgent, cookieArgs); title != "" {
+		runtime.EventsEmit(ctx, "gallery-title", map[string]interface{}{
+			"index": index,
+			"title": title,
+		})
+	}
+
 	cmd := exec.CommandContext(ctx, gallerydlPath, args...)
 
 	stdout, err := cmd.StdoutPipe()
@@ -143,36 +150,20 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 	// Đọc stdout bình thường (không bị block bởi stderr nữa)
 	scanner := bufio.NewScanner(stdout)
 	count := 0
-	galleryTitle := "" // lưu title lấy từ dòng [platform][identifier]
-	titleRegex := regexp.MustCompile(`^\[[\w:]+\]\[([^\]]+)\]`)
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		if line == "" {
-			continue
+		if line == "" || strings.HasPrefix(line, "[") {
+			continue // bỏ qua log lines của gallery-dl
 		}
-
-		if strings.HasPrefix(line, "[") {
-			// Parse [platform][identifier] để lấy title lần đầu
-			if galleryTitle == "" {
-				if match := titleRegex.FindStringSubmatch(line); len(match) > 1 {
-					galleryTitle = match[1]
-					runtime.EventsEmit(ctx, "gallery-title", map[string]interface{}{
-						"index": index,
-						"title": galleryTitle,
-					})
-				}
-			}
-		} else {
-			// Đây là file path vừa được download
-			count++
-			runtime.EventsEmit(ctx, "gallery-progress", map[string]interface{}{
-				"index":      index,
-				"percentage": 0.0,
-				"speed":      fmt.Sprintf("Downloaded %d files", count),
-				"eta":        "Downloading...",
-			})
-		}
+		// Chỉ đếm file path thật sự
+		count++
+		runtime.EventsEmit(ctx, "gallery-progress", map[string]interface{}{
+			"index":      index,
+			"percentage": 0.0,
+			"speed":      fmt.Sprintf("Downloaded %d files", count),
+			"eta":        "Downloading...",
+		})
 	}
 
 	<-stderrDone // Đảm bảo đã đọc hết stderr trước khi tiếp tục
@@ -242,4 +233,44 @@ func splitArguments(s string) ([]string, error) {
 	}
 
 	return args, nil
+}
+
+func sanitizeFolderName(name string) string {
+	reg := regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`)
+	clean := reg.ReplaceAllString(strings.TrimSpace(name), "_")
+	if len(clean) > 100 {
+		clean = clean[:100]
+	}
+	return clean
+}
+
+// getGalleryTitle chạy gallery-dl --print để lấy title/username nhanh (không tải file)
+func getGalleryTitle(ctx context.Context, gallerydlPath, url, userAgent string, cookieArgs []string) string {
+	args := []string{
+		"--print", "{title|description|uploader|user|username|category}",
+		"-s", // simulate, không tải
+		url,
+	}
+	if userAgent != "" {
+		args = append([]string{"-o", "http.user-agent=" + userAgent}, args...)
+	}
+
+	if len(cookieArgs) > 0 {
+		args = append(cookieArgs, args...)
+	}
+
+	cmd := exec.CommandContext(ctx, gallerydlPath, args...)
+	out, err := cmd.Output()
+	if err != nil || len(out) == 0 {
+		return ""
+	}
+
+	// Lấy dòng đầu tiên không rỗng
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "[") {
+			return line
+		}
+	}
+	return ""
 }
