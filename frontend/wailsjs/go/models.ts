@@ -159,6 +159,7 @@ export namespace main {
 	    browser: string;
 	    ugoiraToWebm: boolean;
 	    formats: string[];
+	    allFormats: boolean;
 	    archive: boolean;
 	    extraArgs: string;
 	
@@ -173,6 +174,7 @@ export namespace main {
 	        this.browser = source["browser"];
 	        this.ugoiraToWebm = source["ugoiraToWebm"];
 	        this.formats = source["formats"];
+	        this.allFormats = source["allFormats"];
 	        this.archive = source["archive"];
 	        this.extraArgs = source["extraArgs"];
 	    }

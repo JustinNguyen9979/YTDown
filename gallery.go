@@ -3,11 +3,11 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -75,18 +75,19 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 	args = append(args, "-o", "extractor.pixiv.ugoira=True")
 	args = append(args, "-o", "extractor.tiktok.fullsize=True")
 
-	if len(options.Formats) > 0 {
-		// Create a filter for selected extensions
-		// e.g. extension in ('jpg', 'jpeg', 'png')
+	if options.AllFormats {
+		// Chọn All → không thêm filter gì cả, download tất cả
+		LogInfo("[GDL] All formats selected — no filter applied")
+	} else if len(options.Formats) > 0 {
+		// Chọn 1 số format cụ thể
 		quotedFormats := make([]string, len(options.Formats))
-		for i, fmt := range options.Formats {
-			quotedFormats[i] = "'" + fmt + "'"
+		for i, f := range options.Formats {
+			quotedFormats[i] = "'" + f + "'"
 		}
 		filter := fmt.Sprintf("extension in (%s)", strings.Join(quotedFormats, ", "))
 		args = append(args, "--filter", filter)
 	} else {
-		// If no formats selected, we still want to skip videos by default
-		// if the user intended "Images" tab for images.
+		// Không chọn gì → default bỏ video
 		args = append(args, "--filter", "extension not in ('mp4', 'm4v', 'webm', 'mov', 'avi', 'mkv', 'flv')")
 	}
 
@@ -112,13 +113,16 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 
 	titleEmitted := false
 
-	if title := getGalleryTitle(ctx, gallerydlPath, resolvedURL, userAgent, cookieArgs); title != "" {
+	preflight := getGalleryTitle(ctx, gallerydlPath, resolvedURL, userAgent, cookieArgs)
+	if preflight.Title != "" {
 		runtime.EventsEmit(ctx, "gallery-title", map[string]interface{}{
 			"index": index,
-			"title": title,
+			"title": preflight.Title,
 		})
 		titleEmitted = true
 	}
+	// ← count đã có SẴN trước khi download bắt đầu, giải quyết race condition
+	totalCountFromPreflight := preflight.Count
 
 	cmd := exec.CommandContext(ctx, gallerydlPath, args...)
 
@@ -139,15 +143,12 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 	// ✅ Đọc stderr trong goroutine SONG SONG để tránh deadlock
 	var stderrOutput strings.Builder
 	var stderrMu sync.Mutex
-	var totalCount int
+	totalCount := totalCountFromPreflight
+	LogInfo("[GDL] Pre-flight count: %d", totalCount)
 	var totalCountMu sync.Mutex
 	stderrDone := make(chan struct{})
 	go func() {
 		defer close(stderrDone)
-		// Regex bắt "6 items" hoặc "156 files" từ stderr của gallery-dl
-		// Ví dụ: "[instagram][info] Post abc: Downloading 6 items"
-		//         "[instagram][info] Posts of user: 156 files"
-		countRe := regexp.MustCompile(`\b(\d+)\s+(files|items)\b`)
 		errScanner := bufio.NewScanner(stderr)
 		for errScanner.Scan() {
 			line := errScanner.Text()
@@ -155,16 +156,6 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 			stderrMu.Lock()
 			stderrOutput.WriteString(line + "\n")
 			stderrMu.Unlock()
-
-			// Parse tổng số file từ stderr
-			if matches := countRe.FindStringSubmatch(line); matches != nil {
-				if n, err := strconv.Atoi(matches[1]); err == nil && n > 0 {
-					totalCountMu.Lock()
-					totalCount = n
-					totalCountMu.Unlock()
-					LogInfo("[GDL] Total count detected from stderr: %d", n)
-				}
-			}
 		}
 	}()
 
@@ -173,7 +164,7 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 	count := 0
 
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+		line := strings.TrimPrefix(strings.TrimSpace(scanner.Text()), "# ")
 		if line == "" {
 			continue
 		}
@@ -195,6 +186,7 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 		}
 
 		count++
+		LogInfo("[GDL] File %d/%d: %s", count, totalCount, filepath.Base(line))
 
 		// Tính % nếu biết tổng, không thì để 0 (frontend dùng animated bar)
 		totalCountMu.Lock()
@@ -306,15 +298,17 @@ func sanitizeFolderName(name string) string {
 	return clean
 }
 
+type GalleryPreflightInfo struct {
+	Title string
+	Count int
+}
+
 // getGalleryTitle chạy gallery-dl --print để lấy title/username nhanh (không tải file).
 // Dùng delimiter để tách creator và title thành "Creator | Title".
-func getGalleryTitle(ctx context.Context, gallerydlPath, url, userAgent string, cookieArgs []string) string {
-	const sep = "|||SEP|||"
-	// Dùng delimiter rõ ràng để tách creator và title trong 1 lệnh --print
-	format := fmt.Sprintf("{uploader|user|username|creator|channel|} %s {title|description}", sep)
+func getGalleryTitle(ctx context.Context, gallerydlPath, url, userAgent string, cookieArgs []string) GalleryPreflightInfo {
 
 	args := []string{
-		"--print", format,
+		"--dump-json",
 		"--range", "1", // chỉ lấy item đầu tiên cho nhanh
 		"-s", // simulate, không tải file
 		url,
@@ -331,36 +325,62 @@ func getGalleryTitle(ctx context.Context, gallerydlPath, url, userAgent string, 
 	defer cancel()
 
 	cmd := exec.CommandContext(timeoutCtx, gallerydlPath, args...)
+
 	out, err := cmd.Output()
-	if err != nil || len(out) == 0 {
-		LogInfo("[GDL] getGalleryTitle failed for %s: %v", url, err)
-		return ""
+	if len(out) == 0 {
+		LogInfo("[GDL] Pre-flight: no output for %s: %v", url, err)
+		return GalleryPreflightInfo{}
+	}
+	if err != nil {
+		LogInfo("[GDL] Pre-flight non-zero exit (OK): %v", err)
 	}
 
-	// Duyệt qua output, bỏ qua log lines bắt đầu bằng "["
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "[") {
-			continue
-		}
-		// Tách theo delimiter
-		if idx := strings.Index(line, sep); idx >= 0 {
-			creator := strings.TrimSpace(line[:idx])
-			title := strings.TrimSpace(line[idx+len(sep):])
-			if creator != "" && title != "" {
-				return creator + " | " + title
-			}
-			if title != "" {
-				return title
-			}
-			if creator != "" {
-				return creator
-			}
-			continue
-		}
-		return line // fallback nếu không có delimiter
+	var info GalleryPreflightInfo
+
+	// gallery-dl --dump-json trả về [[type_int, metadata_obj], ...]
+	// Phải parse đúng cấu trúc này
+	var outerArray []json.RawMessage
+	if err := json.Unmarshal(out, &outerArray); err != nil {
+		LogInfo("[GDL] Pre-flight: failed to parse outer array: %v", err)
+		return GalleryPreflightInfo{}
 	}
-	return ""
+
+	for _, raw := range outerArray {
+		// Mỗi phần tử là [2, {...metadata...}]
+		var pair []json.RawMessage
+		if err := json.Unmarshal(raw, &pair); err != nil || len(pair) < 2 {
+			continue
+		}
+
+		// pair[0] = type int (2 = file), pair[1] = metadata object
+		var item map[string]interface{}
+		if err := json.Unmarshal(pair[1], &item); err != nil {
+			continue
+		}
+
+		// Lấy count
+		if c, ok := item["count"].(float64); ok && c > 0 {
+			info.Count = int(c)
+		}
+
+		// Lấy title/username
+		for _, key := range []string{"uploader", "user", "username", "creator", "channel", "fullname"} {
+			if v, ok := item[key].(string); ok && v != "" {
+				info.Title = v
+				break
+			}
+		}
+		if t, ok := item["title"].(string); ok && t != "" && info.Title != "" {
+			info.Title = info.Title + " | " + t
+		} else if t, ok := item["description"].(string); ok && t != "" && info.Title != "" {
+			info.Title = info.Title + " | " + t
+		}
+
+		break // chỉ cần item đầu tiên
+	}
+
+	LogInfo("[GDL] Pre-flight → title=%q count=%d", info.Title, info.Count)
+	return info
 }
 
 func extractGalleryTitleFromPath(filePath, saveRoot string) string {

@@ -688,12 +688,17 @@ function setupGalleryTab() {
         applyGalleryControlState('running');
         clearGalleryResultMessage();
 
+        const selectedFormats = Array.from(formatCheckboxes)
+            .filter(cb => cb.checked)
+            .map(cb => cb.closest('.custom-option').dataset.value);
+
         const options = {
             savePath: savePathInput.value,
             threads: parseInt(threadsSelect.value),
             browser: browserSelect.value,
             ugoiraToWebm: ugoiraCheckbox.checked,
             formats: Array.from(formatCheckboxes).filter(cb => cb.checked).map(cb => cb.closest('.custom-option').dataset.value),
+            allFormats: selectedFormats.length === 0, 
             archive: document.getElementById('galleryArchive')?.checked || false,
             extraArgs: document.getElementById('galleryArgs')?.value || ''
         };

@@ -41,6 +41,7 @@ type GalleryDownloadOptions struct {
 	Browser      string   `json:"browser"`
 	UgoiraToWebm bool     `json:"ugoiraToWebm"`
 	Formats      []string `json:"formats"`
+	AllFormats   bool     `json:"allFormats"`
 	Archive      bool     `json:"archive"`
 	ExtraArgs    string   `json:"extraArgs"`
 }
