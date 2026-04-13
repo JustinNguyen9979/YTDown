@@ -368,6 +368,21 @@ func (a *App) shutdown(ctx context.Context) {
 	a.saveConfig()
 }
 
+// func (a *App) shutdown(ctx context.Context) {
+//     clearTemporaryYouTubeCookie()
+
+//     // ✅ Thêm: xóa tất cả temp cookie files
+//     manager.state.mu.Lock()
+//     for _, f := range manager.state.tempFiles {
+//         os.Remove(f)
+//     }
+//     manager.state.tempFiles = nil
+//     manager.state.mu.Unlock()
+
+//     manager.SaveConfig()
+//     a.saveConfig()
+// }
+
 // GetAvailableBrowsers returns a list of installed browsers for cookie extraction
 func (a *App) GetAvailableBrowsers() []string {
 	return GetInstalledBrowsers()
@@ -485,6 +500,7 @@ func (a *App) GetVideoInfo(url string) *VideoInfo {
 }
 
 // StartDownload starts downloading a single video
+// StartDownload starts downloading a single video
 func (a *App) StartDownload(url, format, quality, savePath string) string {
 	if strings.TrimSpace(url) == "" {
 		return "Error: URL is empty"
@@ -498,9 +514,6 @@ func (a *App) StartDownload(url, format, quality, savePath string) string {
 		if err != nil {
 			LogError("Download error: %v", err)
 			runtime.EventsEmit(a.ctx, "download-error", err.Error())
-		} else {
-			LogInfo("Download complete")
-			runtime.EventsEmit(a.ctx, "download-complete", savePath)
 		}
 	}()
 

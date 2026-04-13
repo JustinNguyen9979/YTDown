@@ -328,38 +328,29 @@ func (m *CookieManager) GetCookieArgs(ctx context.Context, tool string, url stri
 	case CookieModeManual:
 		m.state.mu.RLock()
 		header := m.state.header
+		tempFile := m.state.tempFile
 		m.state.mu.RUnlock()
 
-		if header != "" {
-			// For both gallery-dl and yt-dlp, convert to Netscape cookie file format
-			// This is more reliable than passing long cookie strings via command line
-			netscapeFile, err := writeCookiesToNetscapeFile(header, url)
-			if err == nil && netscapeFile != "" {
-				if tool == "gallery-dl" {
-					args = append(args, "--cookies", netscapeFile)
-					LogInfo("[Cookie] Manual cookies written to Netscape file for gallery-dl: %s", netscapeFile)
-				} else if tool == "yt-dlp" {
-					args = append(args, "--cookies", netscapeFile)
-					LogInfo("[Cookie] Manual cookies written to Netscape file: %s", netscapeFile)
-				}
-			} else {
-				// Fallback for gallery-dl
-				if tool == "gallery-dl" {
-					args = append(args, "-o", "http.headers.Cookie="+header)
-					LogWarning("[Cookie] Failed to write cookie file for gallery-dl, falling back to --header")
-				} else if tool == "yt-dlp" {
-					// Fallback to header if file creation fails
-					args = append(args, "--add-headers", "Cookie: "+header)
-					LogWarning("[Cookie] Failed to write cookie file, falling back to --add-headers")
-				}
-			}
-
-			// For Xiaohongshu in manual mode...
-			if isXHS && tool == "yt-dlp" && !strings.Contains(header, "web_session=") {
-				// If not in manual header, we can't do much unless we also try browser
-				LogWarning("[Cookie] Xiaohongshu detected but web_session missing from manual cookie")
+		if header != "" && tempFile != "" {
+			// Dùng lại file đã tạo bởi setManualCookie — không tạo temp mới
+			args = append(args, "--cookies", tempFile)
+			LogInfo("[Cookie] Reusing existing cookie file: %s", tempFile)
+		} else if header != "" {
+			// Fallback nếu tempFile chưa có (trường hợp hiếm)
+			LogWarning("[Cookie] No temp cookie file found, falling back to header")
+			switch tool {
+			case "gallery-dl":
+				args = append(args, "-o", "http.headers.Cookie="+header)
+			case "yt-dlp":
+				args = append(args, "--add-headers", "Cookie: "+header)
 			}
 		}
+
+		// Cảnh báo nếu XHS mà không có web_session trong cookie
+		if isXHS && tool == "yt-dlp" && header != "" && !strings.Contains(header, "web_session=") {
+			LogWarning("[Cookie] Xiaohongshu detected but web_session missing from manual cookie")
+		}
+
 	}
 	return args
 }

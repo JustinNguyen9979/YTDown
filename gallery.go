@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -138,9 +139,15 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 	// ✅ Đọc stderr trong goroutine SONG SONG để tránh deadlock
 	var stderrOutput strings.Builder
 	var stderrMu sync.Mutex
+	var totalCount int
+	var totalCountMu sync.Mutex
 	stderrDone := make(chan struct{})
 	go func() {
 		defer close(stderrDone)
+		// Regex bắt "6 items" hoặc "156 files" từ stderr của gallery-dl
+		// Ví dụ: "[instagram][info] Post abc: Downloading 6 items"
+		//         "[instagram][info] Posts of user: 156 files"
+		countRe := regexp.MustCompile(`\b(\d+)\s+(files|items)\b`)
 		errScanner := bufio.NewScanner(stderr)
 		for errScanner.Scan() {
 			line := errScanner.Text()
@@ -148,6 +155,16 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 			stderrMu.Lock()
 			stderrOutput.WriteString(line + "\n")
 			stderrMu.Unlock()
+
+			// Parse tổng số file từ stderr
+			if matches := countRe.FindStringSubmatch(line); matches != nil {
+				if n, err := strconv.Atoi(matches[1]); err == nil && n > 0 {
+					totalCountMu.Lock()
+					totalCount = n
+					totalCountMu.Unlock()
+					LogInfo("[GDL] Total count detected from stderr: %d", n)
+				}
+			}
 		}
 	}()
 
@@ -157,10 +174,16 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "[") {
+		if line == "" {
 			continue
 		}
 
+		if !filepath.IsAbs(line) {
+			LogDebug("[gallery-dl] %s", line)
+			continue
+		}
+
+		// Đây là filepath thật
 		if !titleEmitted {
 			if derivedTitle := extractGalleryTitleFromPath(line, options.SavePath); derivedTitle != "" {
 				runtime.EventsEmit(ctx, "gallery-title", map[string]interface{}{
@@ -172,15 +195,40 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 		}
 
 		count++
+
+		// Tính % nếu biết tổng, không thì để 0 (frontend dùng animated bar)
+		totalCountMu.Lock()
+		tc := totalCount
+		totalCountMu.Unlock()
+
+		var percentage float64
+		var speedText string
+		if tc > 0 {
+			percentage = float64(count) / float64(tc) * 100.0
+			speedText = fmt.Sprintf("Downloaded %d/%d files", count, tc)
+		} else {
+			percentage = 0.0
+			speedText = fmt.Sprintf("Downloaded %d files", count)
+		}
+
 		runtime.EventsEmit(ctx, "gallery-progress", map[string]interface{}{
 			"index":      index,
-			"percentage": 0.0,
-			"speed":      fmt.Sprintf("Downloaded %d files", count),
+			"percentage": percentage,
+			"speed":      speedText,
 			"eta":        "Downloading...",
 		})
 	}
 
 	<-stderrDone // Đảm bảo đã đọc hết stderr trước khi tiếp tục
+
+	if count > 0 {
+		runtime.EventsEmit(ctx, "gallery-progress", map[string]interface{}{
+			"index":      index,
+			"percentage": 100.0, // ← 100% khi xong
+			"speed":      fmt.Sprintf("Downloaded %d files", count),
+			"eta":        "Done",
+		})
+	}
 
 	if err := cmd.Wait(); err != nil {
 		if ctx.Err() != nil {

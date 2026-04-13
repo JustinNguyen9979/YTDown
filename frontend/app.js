@@ -1049,10 +1049,15 @@ function setupGoEvents() {
                         `;
                     }
                     const fill = row.querySelector('.batch-progress-fill');
+                    const pct = row.querySelector('.progress-pct');
                     if (fill) {
                         // If we have percentage in data, use it
                         if (data.percentage > 0) {
                             fill.style.width = data.percentage + '%';
+                            if (pct) {  // ← thêm block này
+                                pct.textContent = `${Math.round(data.percentage)}%`;
+                                pct.className = 'progress-pct' + (data.percentage >= 100 ? ' done' : '');
+                            }
                         } else {
                             fill.style.width = '50%'; // Intermediate progress
                         }
@@ -1116,9 +1121,14 @@ function setupGoEvents() {
                         `;
                     }
                     const fill = row.querySelector('.batch-progress-fill');
+                    const pct = row.querySelector('.progress-pct');
                     if (fill) {
                         fill.style.width = '100%';
                         fill.style.backgroundColor = 'var(--accent-green, #34c759)';
+                    }
+                    if (pct) {
+                        pct.textContent = '100%';
+                        pct.className = 'progress-pct done';
                     }
                 }
                 const btn = document.getElementById('startGalleryBtn');

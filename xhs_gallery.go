@@ -54,25 +54,46 @@ func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, opti
 	}
 
 	client := &http.Client{Timeout: fetchOptions.Timeout}
+	var failedCount int
 	for i, assetURL := range urls {
-		if err := downloadXHSAsset(ctx, client, fetchOptions, assetURL, filepath.Join(targetDir, buildXHSFilename(i+1, assetURL))); err != nil {
-			return err
+		targetPath := filepath.Join(targetDir, buildXHSFilename(i+1, assetURL))
+
+		if err := downloadXHSAsset(ctx, client, fetchOptions, assetURL, targetPath); err != nil {
+			// Lỗi 1 ảnh → log + bỏ qua, không return
+			LogError("[XHS] Asset %d failed: %v", i+1, err)
+			failedCount++
+			runtime.EventsEmit(ctx, "gallery-asset-warning", map[string]interface{}{
+				"index":    index,
+				"assetNum": i + 1,
+				"error":    err.Error(),
+			})
+			continue // ← tải tiếp ảnh tiếp theo
 		}
 
+		// Chỉ emit progress khi tải thành công
 		runtime.EventsEmit(ctx, "gallery-progress", map[string]interface{}{
 			"index":      index,
 			"percentage": float64(i+1) / float64(len(urls)) * 100,
 			"speed":      fmt.Sprintf("Downloaded %d/%d files", i+1, len(urls)),
 			"eta":        "Downloading...",
 		})
-
 	}
+
+	if failedCount > 0 {
+		LogError("[XHS] %d/%d assets failed", failedCount, len(urls))
+	}
+
+	runtime.EventsEmit(ctx, "gallery-progress", map[string]interface{}{
+		"index":      index,
+		"percentage": 100.0,
+		"speed":      fmt.Sprintf("Downloaded %d/%d files", len(urls)-failedCount, len(urls)),
+		"eta":        "Done",
+	})
 
 	runtime.EventsEmit(ctx, "gallery-complete", map[string]interface{}{
 		"index":    index,
 		"filePath": targetDir,
 	})
-
 	return nil
 }
 
