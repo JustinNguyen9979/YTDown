@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -108,11 +109,14 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 
 	LogInfo("[GDL] Running command: %s with args: %s", gallerydlPath, strings.Join(args, " "))
 
+	titleEmitted := false
+
 	if title := getGalleryTitle(ctx, gallerydlPath, resolvedURL, userAgent, cookieArgs); title != "" {
 		runtime.EventsEmit(ctx, "gallery-title", map[string]interface{}{
 			"index": index,
 			"title": title,
 		})
+		titleEmitted = true
 	}
 
 	cmd := exec.CommandContext(ctx, gallerydlPath, args...)
@@ -152,11 +156,21 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 	count := 0
 
 	for scanner.Scan() {
-		line := scanner.Text()
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "[") {
-			continue // bỏ qua log lines của gallery-dl
+			continue
 		}
-		// Chỉ đếm file path thật sự
+
+		if !titleEmitted {
+			if derivedTitle := extractGalleryTitleFromPath(line, options.SavePath); derivedTitle != "" {
+				runtime.EventsEmit(ctx, "gallery-title", map[string]interface{}{
+					"index": index,
+					"title": derivedTitle,
+				})
+				titleEmitted = true
+			}
+		}
+
 		count++
 		runtime.EventsEmit(ctx, "gallery-progress", map[string]interface{}{
 			"index":      index,
@@ -244,33 +258,84 @@ func sanitizeFolderName(name string) string {
 	return clean
 }
 
-// getGalleryTitle chạy gallery-dl --print để lấy title/username nhanh (không tải file)
+// getGalleryTitle chạy gallery-dl --print để lấy title/username nhanh (không tải file).
+// Dùng delimiter để tách creator và title thành "Creator | Title".
 func getGalleryTitle(ctx context.Context, gallerydlPath, url, userAgent string, cookieArgs []string) string {
+	const sep = "|||SEP|||"
+	// Dùng delimiter rõ ràng để tách creator và title trong 1 lệnh --print
+	format := fmt.Sprintf("{uploader|user|username|creator|channel|} %s {title|description}", sep)
+
 	args := []string{
-		"--print", "{title|description|uploader|user|username|category}",
-		"-s", // simulate, không tải
+		"--print", format,
+		"--range", "1", // chỉ lấy item đầu tiên cho nhanh
+		"-s", // simulate, không tải file
 		url,
 	}
 	if userAgent != "" {
 		args = append([]string{"-o", "http.user-agent=" + userAgent}, args...)
 	}
-
 	if len(cookieArgs) > 0 {
 		args = append(cookieArgs, args...)
 	}
 
-	cmd := exec.CommandContext(ctx, gallerydlPath, args...)
+	// Timeout 15 giây để tránh block download
+	timeoutCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(timeoutCtx, gallerydlPath, args...)
 	out, err := cmd.Output()
 	if err != nil || len(out) == 0 {
+		LogInfo("[GDL] getGalleryTitle failed for %s: %v", url, err)
 		return ""
 	}
 
-	// Lấy dòng đầu tiên không rỗng
+	// Duyệt qua output, bỏ qua log lines bắt đầu bằng "["
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasPrefix(line, "[") {
-			return line
+		if line == "" || strings.HasPrefix(line, "[") {
+			continue
 		}
+		// Tách theo delimiter
+		if idx := strings.Index(line, sep); idx >= 0 {
+			creator := strings.TrimSpace(line[:idx])
+			title := strings.TrimSpace(line[idx+len(sep):])
+			if creator != "" && title != "" {
+				return creator + " | " + title
+			}
+			if title != "" {
+				return title
+			}
+			if creator != "" {
+				return creator
+			}
+			continue
+		}
+		return line // fallback nếu không có delimiter
 	}
 	return ""
+}
+
+func extractGalleryTitleFromPath(filePath, saveRoot string) string {
+	filePath = strings.TrimSpace(filePath)
+	filePath = strings.Trim(filePath, `"'`)
+
+	if filePath == "" || strings.HasPrefix(filePath, "[") {
+		return ""
+	}
+
+	rel, err := filepath.Rel(saveRoot, filePath)
+	if err == nil && rel != "" && rel != "." && !strings.HasPrefix(rel, "..") {
+		parts := strings.Split(rel, string(filepath.Separator))
+		if len(parts) > 1 && strings.TrimSpace(parts[0]) != "" {
+			return strings.TrimSpace(parts[0])
+		}
+	}
+
+	dir := filepath.Base(filepath.Dir(filePath))
+	dir = strings.TrimSpace(dir)
+	if dir == "" || dir == "." || dir == string(filepath.Separator) {
+		return ""
+	}
+
+	return dir
 }
