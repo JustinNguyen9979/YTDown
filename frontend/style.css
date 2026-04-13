@@ -164,12 +164,8 @@ body {
     -webkit-app-region: no-drag;
 }
 
-.upgrade-btn:hover {
-    background: #1a8fff;
-    filter: brightness(1.15);
-    box-shadow: 0 4px 18px rgba(10, 132, 255, 0.6);
-    transform: scale(1.05);
-    cursor: pointer;
+.upgrade-btn:hover .upgrade-icon {
+  animation: spin 0.8s linear infinite; /* ← Xoay nhanh hơn khi hover */
 }
 
 .upgrade-btn:active {
@@ -177,20 +173,18 @@ body {
     filter: brightness(0.95);
 }
 
-.upgrade-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-    filter: none;
+.upgrade-btn:disabled .upgrade-icon {
+  animation: spin 0.5s linear infinite; /* ← Xoay rất nhanh khi đang update */
 }
 
 /* Icon SVG trong nút — spin khi disabled (đang update) */
 .upgrade-icon {
-    flex-shrink: 0;
-    transform-box: fill-box;      /* rotate quanh chính bản thân SVG */
-    transform-origin: center;     /* tâm xoay = giữa icon */
+  flex-shrink: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: spin 1.8s linear infinite; /* ← Luôn xoay để thu hút user */
 }
+
 .upgrade-btn:disabled .upgrade-icon {
     animation: spin 0.9s linear infinite;
 }
