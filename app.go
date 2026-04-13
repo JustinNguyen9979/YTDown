@@ -339,8 +339,10 @@ exit
 // startup is called at application startup
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	InitLogger()
 	a.loadConfig()
 	manager.LoadConfig()
+	LogInfo("[Startup] YTDown started")
 }
 
 // CheckBinaries checks if yt-dlp, ffmpeg and gallery-dl are installed (legacy support)
@@ -364,25 +366,63 @@ func (a *App) CheckBinaries() map[string]interface{} {
 
 // shutdown is called at application termination
 func (a *App) shutdown(ctx context.Context) {
+	LogInfo("[Shutdown] Starting cleanup...")
+
+	// 1. Xóa temporary YouTube cookie file
 	clearTemporaryYouTubeCookie()
+
+	// 2. Xóa tất cả temp cookie files trong manager state
+	manager.state.mu.Lock()
+	if manager.state.tempFile != "" {
+		_ = os.RemoveAll(filepath.Dir(manager.state.tempFile))
+		manager.state.tempFile = ""
+		LogInfo("[Cleanup] Removed temp cookie dir")
+	}
+	manager.state.mu.Unlock()
+
+	// 3. Xóa cache yt-dlp, gallery-dl và temp folder của app
+	cleanAppCache()
+
+	// 4. Lưu config (làm trước khi xóa log)
 	manager.SaveConfig()
 	a.saveConfig()
+
+	// 5. Xóa log file (làm CUỐI CÙNG)
+	LogInfo("[Shutdown] Cleanup complete. Goodbye!")
+	CleanupLogFile()
 }
 
-// func (a *App) shutdown(ctx context.Context) {
-//     clearTemporaryYouTubeCookie()
+// cleanAppCache xóa cache của yt-dlp, gallery-dl và temp folder của app
+func cleanAppCache() {
+	usr, err := user.Current()
+	if err != nil {
+		return
+	}
 
-//     // ✅ Thêm: xóa tất cả temp cookie files
-//     manager.state.mu.Lock()
-//     for _, f := range manager.state.tempFiles {
-//         os.Remove(f)
-//     }
-//     manager.state.tempFiles = nil
-//     manager.state.mu.Unlock()
+	// Danh sách cache paths cần xóa (macOS + Linux)
+	cachePaths := []string{
+		// yt-dlp cache
+		filepath.Join(usr.HomeDir, ".cache", "yt-dlp"),
+		filepath.Join(usr.HomeDir, "Library", "Caches", "yt-dlp"),
+		// gallery-dl cache
+		filepath.Join(usr.HomeDir, ".cache", "gallery-dl"),
+		filepath.Join(usr.HomeDir, "Library", "Caches", "gallery-dl"),
+		// ytdown app temp folder
+		filepath.Join(os.TempDir(), "ytdown"),
+		// yt-dlp temp fragments (nếu download bị dở)
+		filepath.Join(usr.HomeDir, ".config", "ytdown", "logs"),
+	}
 
-//     manager.SaveConfig()
-//     a.saveConfig()
-// }
+	for _, path := range cachePaths {
+		if _, err := os.Stat(path); err == nil {
+			if err := os.RemoveAll(path); err == nil {
+				LogInfo("[Cleanup] Removed: %s", path)
+			} else {
+				LogWarning("[Cleanup] Failed to remove %s: %v", path, err)
+			}
+		}
+	}
+}
 
 // GetAvailableBrowsers returns a list of installed browsers for cookie extraction
 func (a *App) GetAvailableBrowsers() []string {
@@ -500,7 +540,6 @@ func (a *App) GetVideoInfo(url string) *VideoInfo {
 	return info
 }
 
-// StartDownload starts downloading a single video
 // StartDownload starts downloading a single video
 func (a *App) StartDownload(url, format, quality, savePath string) string {
 	if strings.TrimSpace(url) == "" {

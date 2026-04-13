@@ -186,7 +186,6 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 		}
 
 		count++
-		LogInfo("[GDL] File %d/%d: %s", count, totalCount, filepath.Base(line))
 
 		// Tính % nếu biết tổng, không thì để 0 (frontend dùng animated bar)
 		totalCountMu.Lock()
