@@ -774,7 +774,11 @@ function clearGalleryResultMessage() {
 
 async function checkUpdates() {
     const banner = document.getElementById('update-banner');
-    if (!banner) return;
+    if (!banner) {
+        console.error('[UPDATER] ❌ #update-banner không tồn tại trong DOM!');
+        return;
+    }
+    console.log('[UPDATER] ✅ Banner found, checking updates...');
 
     const pendingUpdates = []; // { type: 'binary'|'app', data }
 
