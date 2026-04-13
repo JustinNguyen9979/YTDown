@@ -883,23 +883,14 @@ async function checkUpdates() {
         });
     }
 
-    // ── 6. YTDown Auto Update ──────────────────────────────────
+        // ── 6. YTDown Auto Update ──────────────────────────────────
     document.getElementById('upgradeBtn-ytdown-app')?.addEventListener('click', async () => {
         const item = banner.querySelector('[data-tool="ytdown-app"]');
         const btn = document.getElementById('upgradeBtn-ytdown-app');
         if (btn) {
             btn.disabled = true;
-            btn.innerHTML = `
-                <svg class="upgrade-icon" width="13" height="13" viewBox="0 0 24 24"
-                    fill="none" stroke="currentColor" stroke-width="2.5"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 2v6h-6"/>
-                    <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
-                    <path d="M3 22v-6h6"/>
-                    <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
-                </svg>
-                Updating...
-            `;
+            const textNode = [...btn.childNodes].find(n => n.nodeType === 3 && n.textContent.trim());
+            if (textNode) textNode.textContent = ' Updating...';
         }
 
         // Lắng nghe event từ backend khi bắt đầu tải
@@ -915,14 +906,12 @@ async function checkUpdates() {
 
         try {
             await window.go.main.App.InstallAppUpdate();
-            // Nếu tới được đây (chưa quit) thì show thông báo chờ
             if (item) {
                 item.innerHTML = `<span class="update-msg update-msg--success">
                     ✅ Update started — app will restart automatically.
                 </span>`;
             }
         } catch (err) {
-            // Auto update thất bại → fallback hướng dẫn brew
             if (item) {
             }
         }
