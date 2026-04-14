@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -30,12 +31,13 @@ type CookieConfig struct {
 }
 
 type temporaryCookieState struct {
-	mu           sync.RWMutex
-	header       string
-	cookies      []parsedCookie
-	tempFile     string
-	xhsSession   string    // Cache for Xiaohongshu session
-	xhsCacheTime time.Time // When the cache was last updated
+	mu            sync.RWMutex
+	header        string
+	cookies       []parsedCookie
+	tempFile      string
+	xhsSession    string    // Cache for Xiaohongshu session
+	xhsCacheTime  time.Time // When the cache was last updated
+	xhsExtracting bool
 }
 
 type parsedCookie struct {
@@ -66,7 +68,7 @@ func GetInstalledBrowsers() []string {
 			available = append(available, id)
 		}
 	}
-
+	sort.Strings(available)
 	return available
 }
 
@@ -224,7 +226,7 @@ func writeCookiesToNetscapeFile(headerString string, url string) (string, error)
 		}
 
 		// Write in Netscape format: domain, flag, path, secure, expiration, name, value
-		line := fmt.Sprintf("%s\tTRUE\t/\tTRUE\t0\t%s\t%s\n", domain, name, value)
+		line := fmt.Sprintf("%s\tTRUE\t/\tTRUE\t2147483647\t%s\t%s\n", domain, name, value)
 		tmpFile.WriteString(line)
 	}
 
@@ -382,7 +384,32 @@ func (m *CookieManager) extractWebSessionFromBrowser(ctx context.Context, browse
 		fmt.Printf("[Cookie] ⚡ Using CACHED web_session: %s\n", session)
 		return session
 	}
+	isExtracting := m.state.xhsExtracting
 	m.state.mu.RUnlock()
+
+	if isExtracting {
+		// Chờ tối đa 15s để goroutine kia xong
+		for i := 0; i < 30; i++ {
+			time.Sleep(500 * time.Millisecond)
+			m.state.mu.RLock()
+			session := m.state.xhsSession
+			done := !m.state.xhsExtracting
+			m.state.mu.RUnlock()
+			if session != "" || done {
+				return session
+			}
+		}
+		return ""
+	}
+
+	m.state.mu.Lock()
+	m.state.xhsExtracting = true
+	m.state.mu.Unlock()
+	defer func() {
+		m.state.mu.Lock()
+		m.state.xhsExtracting = false
+		m.state.mu.Unlock()
+	}()
 
 	ytdlp := getResourcePath("yt-dlp")
 	if ytdlp == "" {
@@ -443,19 +470,19 @@ func (m *CookieManager) extractWebSessionFromBrowser(ctx context.Context, browse
 
 	// Fallback regex search in the file content
 	if session == "" {
-		re := regexp.MustCompile(`web_session\s+([a-zA-Z0-9]+)`)
+		re := regexp.MustCompile(`web_session\s+([\w\-%.]+)`)
 		matches := re.FindStringSubmatch(outputStr)
 		if len(matches) > 1 {
 			session = matches[1]
 		}
 	}
 
-	// 2. Update Cache if found
 	if session != "" {
 		m.state.mu.Lock()
 		m.state.xhsSession = session
 		m.state.xhsCacheTime = time.Now()
 		m.state.mu.Unlock()
+		fmt.Printf("[Cookie] ✅ web_session extracted: %s\n", session)
 	}
 
 	return session
@@ -608,6 +635,8 @@ func clearManualCookie() {
 	manager.state.header = ""
 	manager.state.tempFile = ""
 	manager.state.cookies = nil
+	manager.state.xhsSession = ""
+	manager.state.xhsCacheTime = time.Time{}
 	manager.state.mu.Unlock()
 
 	manager.mu.Lock()

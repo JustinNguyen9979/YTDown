@@ -57,7 +57,11 @@ func ResolveShortURL(url string, userAgent string) string {
 	}
 
 	// Try GET instead of HEAD because some shorteners (like XHS) behave differently with HEAD
-	req, _ := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		fmt.Printf("[URL] ❌ Failed to create request: %v\n", err)
+		return url
+	}
 	req.Header.Set("User-Agent", ua)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
 
@@ -401,15 +405,18 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 	// Get cookie and browser settings
 	manager.mu.RLock()
 	cookieMode := manager.config.Mode
-	selectedBrowser := manager.config.SelectedBrowser
 	manager.mu.RUnlock()
 
-	// Apply browser-specific User-Agent if a browser is selected or manual cookie is used
-	userAgent := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36" // Default Chrome
-	if cookieMode == CookieModeBrowser && selectedBrowser != "" {
-		userAgent = getUserAgentForBrowser(selectedBrowser)
+	if cookieMode != CookieModeBrowser {
+		userAgent := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+		if cookieMode == CookieModeManual {
+			// Manual cookie: dùng UA động từ GetUA() thay vì hardcode
+			if dynUA := manager.GetUA(); dynUA != "" {
+				userAgent = dynUA
+			}
+		}
+		args = append(args, "--user-agent", userAgent)
 	}
-	args = append(args, "--user-agent", userAgent)
 
 	if cookieArgs := manager.GetCookieArgs(ctx, "yt-dlp", url); len(cookieArgs) > 0 {
 		args = append(args, cookieArgs...)
@@ -670,7 +677,9 @@ func GetPlaylistVideos(ctx context.Context, url string) ([]string, error) {
 	if entries, ok := data["entries"].([]interface{}); ok {
 		for _, entry := range entries {
 			if e, ok := entry.(map[string]interface{}); ok {
-				if id, ok := e["id"].(string); ok {
+				if webpageURL, ok := e["webpage_url"].(string); ok && webpageURL != "" {
+					videos = append(videos, webpageURL)
+				} else if id, ok := e["id"].(string); ok {
 					videos = append(videos, "https://www.youtube.com/watch?v="+id)
 				}
 			}
