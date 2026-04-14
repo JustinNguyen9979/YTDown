@@ -156,7 +156,6 @@ export namespace main {
 	export class GalleryDownloadOptions {
 	    savePath: string;
 	    threads: number;
-	    browser: string;
 	    ugoiraToWebm: boolean;
 	    formats: string[];
 	    allFormats: boolean;
@@ -171,7 +170,6 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.savePath = source["savePath"];
 	        this.threads = source["threads"];
-	        this.browser = source["browser"];
 	        this.ugoiraToWebm = source["ugoiraToWebm"];
 	        this.formats = source["formats"];
 	        this.allFormats = source["allFormats"];

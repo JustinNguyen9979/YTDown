@@ -67,19 +67,6 @@ function populateSelectOptions() {
     { id: 'batchThreadsSelect',   defaultValue: '3', options: threads },
     { id: 'galleryThreadsSelect', defaultValue: '3', options: threads },
     {
-      id: 'galleryBrowserSelect',
-      defaultValue: '',
-      options: [
-        { value: '',         text: 'None'    },
-        { value: 'chrome',   text: 'Chrome'  },
-        { value: 'firefox',  text: 'Firefox' },
-        { value: 'safari',   text: 'Safari'  },
-        { value: 'edge',     text: 'Edge'    },
-        { value: 'opera',    text: 'Opera'   },
-        { value: 'vivaldi',  text: 'Vivaldi' }
-      ]
-    },
-    {
       id: 'compressType',
       defaultValue: 'image',
       options: [
@@ -420,7 +407,6 @@ function refreshCookieUI() {
         document.getElementById('cookieAddedBadge'),
         document.getElementById('galleryCookieAddedBadge')
     ];
-    const galleryBrowserRow = document.getElementById('galleryBrowserRow');
 
     const browserNames = {
         chrome: 'Chrome',
@@ -438,14 +424,10 @@ function refreshCookieUI() {
     if (state.cookieConfig.mode === 'browser' && state.cookieConfig.selected_browser) {
         btnText = `Cookie: ${browserNames[state.cookieConfig.selected_browser] || state.cookieConfig.selected_browser}`;
         badgeHidden = false;
-        if (galleryBrowserRow) galleryBrowserRow.style.display = 'none';
     } else if (state.cookieConfig.mode === 'manual') {
         btnText = 'Cookie: Manual';
-        badgeHidden = false;
-        if (galleryBrowserRow) galleryBrowserRow.style.display = 'flex';
-    } else {
-        if (galleryBrowserRow) galleryBrowserRow.style.display = 'flex';
-    }
+        badgeHidden = false;  
+    } 
 
     mainBtns.forEach(btn => { if (btn) btn.textContent = btnText; });
     badges.forEach(badge => { if (badge) badge.hidden = badgeHidden; });
@@ -458,7 +440,6 @@ function setupGalleryTab() {
     const cancelBtn = document.getElementById('cancelGalleryBtn');
     const urlsTextarea = document.getElementById('galleryUrls');
     const threadsSelect = document.getElementById('galleryThreadsSelect');
-    const browserSelect = document.getElementById('galleryBrowserSelect');
     const ugoiraCheckbox = document.getElementById('galleryUgoiraToWebm');
     const savePathInput = document.getElementById('gallerySavePath');
     const openFolderBtn = document.getElementById('openGalleryFolderBtn');
@@ -713,7 +694,6 @@ function setupGalleryTab() {
         const options = {
             savePath: savePathInput.value,
             threads: parseInt(threadsSelect.value),
-            browser: browserSelect.value,
             ugoiraToWebm: ugoiraCheckbox.checked,
             formats: Array.from(formatCheckboxes).filter(cb => cb.checked).map(cb => cb.closest('.custom-option').dataset.value),
             allFormats: allCheckbox?.checked === true, 
@@ -755,7 +735,6 @@ function applyGalleryControlState(status) {
     const urlsTextarea = document.getElementById('galleryUrls');
     const browseBtn = document.getElementById('browseGalleryBtn');
     const threadsSelect = document.getElementById('galleryThreadsSelect');
-    const browserSelect = document.getElementById('galleryBrowserSelect');
     const ugoiraCheckbox = document.getElementById('galleryUgoiraToWebm');
 
     if (!startBtn || !cancelBtn) return;
@@ -771,7 +750,6 @@ function applyGalleryControlState(status) {
     if (urlsTextarea) urlsTextarea.disabled = isRunning;
     if (browseBtn) browseBtn.disabled = isRunning;
     if (threadsSelect) threadsSelect.disabled = isRunning;
-    if (browserSelect) browserSelect.disabled = isRunning;
     if (ugoiraCheckbox) ugoiraCheckbox.disabled = isRunning;
 
     refreshCustomSelectStates();

@@ -38,7 +38,6 @@ type GalleryBatchState struct {
 type GalleryDownloadOptions struct {
 	SavePath     string   `json:"savePath"`
 	Threads      int      `json:"threads"`
-	Browser      string   `json:"browser"`
 	UgoiraToWebm bool     `json:"ugoiraToWebm"`
 	Formats      []string `json:"formats"`
 	AllFormats   bool     `json:"allFormats"`

@@ -64,8 +64,6 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 	if useCookies {
 		if ca := manager.GetCookieArgs(ctx, "gallery-dl", resolvedURL); len(ca) > 0 {
 			cookieArgs = ca
-		} else if options.Browser != "" {
-			cookieArgs = []string{"--cookies-from-browser", options.Browser}
 		}
 		args = append(args, cookieArgs...)
 	}
