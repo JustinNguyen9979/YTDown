@@ -293,66 +293,75 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 	args := []string{}
 
 	switch format {
+
 	case "MP4":
 		if quality == "Best" || quality == "Best Quality" {
-			args = append(args, "-f", "bestvideo+bestaudio/best")
+			// Ưu tiên stream mp4+m4a native → không cần re-encode
+			// Fallback: bất kỳ bestvideo+bestaudio rồi merge sang mp4
+			args = append(args, "-f",
+				"bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best")
 		} else {
-			qualityHeight := qualityToHeight(quality)
-			args = append(args, "-f", fmt.Sprintf("bestvideo[height<=%s]+bestaudio/best[height<=%s]", qualityHeight, qualityHeight))
+			h := qualityToHeight(quality)
+			args = append(args, "-f", fmt.Sprintf(
+				"bestvideo[ext=mp4][height<=%s]+bestaudio[ext=m4a]/bestvideo[height<=%s]+bestaudio/best[height<=%s]",
+				h, h, h))
 		}
 		args = append(args, "--merge-output-format", "mp4")
+		// Nếu vẫn dính VP9/Opus thì recode → đảm bảo mọi player đọc được
+		args = append(args, "--recode-video", "mp4")
 
 	case "MKV":
+		// MKV chứa được mọi codec — không cần ưu tiên ext, không cần recode
 		if quality == "Best" || quality == "Best Quality" {
 			args = append(args, "-f", "bestvideo+bestaudio/best")
 		} else {
-			qualityHeight := qualityToHeight(quality)
-			args = append(args, "-f", fmt.Sprintf("bestvideo[height<=%s]+bestaudio/best[height<=%s]", qualityHeight, qualityHeight))
+			h := qualityToHeight(quality)
+			args = append(args, "-f", fmt.Sprintf(
+				"bestvideo[height<=%s]+bestaudio/best[height<=%s]", h, h))
 		}
 		args = append(args, "--merge-output-format", "mkv")
 
 	case "WEBM":
 		if quality == "Best" || quality == "Best Quality" {
-			args = append(args, "-f", "bestvideo[ext=webm]+bestaudio[ext=webm]/bestvideo+bestaudio/best")
+			// Ưu tiên VP9+Opus (webm native) → không re-encode
+			// Fallback: bất kỳ stream → bắt buộc recode sang VP9/Opus
+			args = append(args, "-f",
+				"bestvideo[ext=webm]+bestaudio[ext=webm]/bestvideo[vcodec^=vp]+bestaudio/bestvideo+bestaudio/best")
 		} else {
-			qualityHeight := qualityToHeight(quality)
-			args = append(args, "-f", fmt.Sprintf("bestvideo[ext=webm][height<=%s]+bestaudio[ext=webm]/best[height<=%s]", qualityHeight, qualityHeight))
+			h := qualityToHeight(quality)
+			args = append(args, "-f", fmt.Sprintf(
+				"bestvideo[ext=webm][height<=%s]+bestaudio[ext=webm]/bestvideo[vcodec^=vp][height<=%s]+bestaudio/bestvideo[height<=%s]+bestaudio/best[height<=%s]",
+				h, h, h, h))
 		}
 		args = append(args, "--merge-output-format", "webm")
+		// BẮT BUỘC: H264/AAC không hợp lệ trong container .webm → phải recode
+		args = append(args, "--recode-video", "webm")
 
 	case "MP3":
 		args = append(args,
-			"-f", "bestaudio",
+			"-f", "bestaudio/best",
 			"--extract-audio",
 			"--audio-format", "mp3",
 			"--audio-quality", "0",
 		)
 
-	case "AAC":
-		args = append(args,
-			"-f", "bestaudio",
-			"--extract-audio",
-			"--audio-format", "aac",
-			"--audio-quality", "0",
-		)
-
 	case "WAV":
 		args = append(args,
-			"-f", "bestaudio",
+			"-f", "bestaudio/best",
 			"--extract-audio",
 			"--audio-format", "wav",
 		)
 
 	case "FLAC":
 		args = append(args,
-			"-f", "bestaudio",
+			"-f", "bestaudio/best",
 			"--extract-audio",
 			"--audio-format", "flac",
 		)
 
 	case "M4A":
 		args = append(args,
-			"-f", "bestaudio[ext=m4a]/bestaudio",
+			"-f", "bestaudio[ext=m4a]/bestaudio/best",
 			"--extract-audio",
 			"--audio-format", "m4a",
 			"--audio-quality", "0",

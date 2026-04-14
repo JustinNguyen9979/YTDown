@@ -48,7 +48,6 @@ function populateSelectOptions() {
             { value: 'WEBM', text: '🎬 WEBM (Video)' },
             // ── Audio ──
             { value: 'MP3',  text: '🎵 MP3  (Audio)' },
-            { value: 'AAC',  text: '🎵 AAC  (Audio)' },
             { value: 'M4A',  text: '🎵 M4A  (Audio)' },
             { value: 'WAV',  text: '🎵 WAV  (Audio)' },
             { value: 'FLAC', text: '🎵 FLAC (Audio)' },
@@ -545,7 +544,16 @@ function setupGalleryTab() {
             });
         });
 
-        const formatCheckboxes = mediaListContainer.querySelectorAll('input[type="checkbox"]');
+        formatCheckboxes = mediaListContainer.querySelectorAll('input[type="checkbox"]');
+
+        const updateStartBtnState = () => {
+            const btn = document.getElementById('startGalleryBtn');
+            if (!btn || state.gallerySessionStatus === 'running') return;
+            const anyChecked = allCheckbox?.checked ||
+                Array.from(formatCheckboxes).some(cb => cb.checked);
+            btn.disabled = !anyChecked;
+            btn.title = anyChecked ? '' : 'Vui lòng chọn ít nhất một định dạng';
+        };
         
         const updateTriggerText = () => {
             const selected = Array.from(formatCheckboxes)
@@ -567,6 +575,7 @@ function setupGalleryTab() {
         allCheckbox?.addEventListener('change', () => {
             formatCheckboxes.forEach(cb => cb.checked = allCheckbox.checked);
             updateTriggerText();
+            updateStartBtnState();
         });
 
         formatCheckboxes.forEach(cb => {
@@ -574,6 +583,7 @@ function setupGalleryTab() {
                 const allChecked = Array.from(formatCheckboxes).every(c => c.checked);
                 if (allCheckbox) allCheckbox.checked = allChecked;
                 updateTriggerText();
+                updateStartBtnState();
             });
         });
 
@@ -585,6 +595,7 @@ function setupGalleryTab() {
         };
 
         updateTriggerText();
+        updateStartBtnState();
     }
     // --- End Media Formats Logic ---
 
@@ -704,7 +715,7 @@ function setupGalleryTab() {
             browser: browserSelect.value,
             ugoiraToWebm: ugoiraCheckbox.checked,
             formats: Array.from(formatCheckboxes).filter(cb => cb.checked).map(cb => cb.closest('.custom-option').dataset.value),
-            allFormats: selectedFormats.length === 0, 
+            allFormats: allCheckbox?.checked === true, 
             archive: document.getElementById('galleryArchive')?.checked || false,
             extraArgs: document.getElementById('galleryArgs')?.value || ''
         };
@@ -1426,7 +1437,7 @@ function setupBatchTab() {
         });
     }
 
-    const AUDIO_FORMATS = ['MP3', 'AAC', 'WAV', 'FLAC', 'M4A'];
+    const AUDIO_FORMATS = ['MP3', 'WAV', 'FLAC', 'M4A'];
 
     qualityRow.style.display = AUDIO_FORMATS.includes(formatSelect.value) ? 'none' : 'flex';
 

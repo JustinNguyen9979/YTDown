@@ -1201,7 +1201,6 @@ func (a *App) runGalleryBatchSession(sessionID int64) {
 			a.currentGallery.ActiveCancels[index] = cancel
 			a.galleryMu.Unlock()
 
-			// Convert options to separate arguments if needed
 			err := DownloadGalleryWithOpts(itemCtx, index, url, options)
 
 			a.galleryMu.Lock()
@@ -1213,27 +1212,19 @@ func (a *App) runGalleryBatchSession(sessionID int64) {
 				return
 			}
 
+			// ✅ Case 1: Download thành công
 			if err == nil {
-				rawErr := err.Error()
-				cleanErr := rawErr
-				for _, line := range strings.Split(rawErr, "\n") {
-					line = strings.TrimSpace(line)
-					if line != "" {
-						cleanErr = strings.TrimPrefix(line, "gallery download failed: ")
-						cleanErr = strings.TrimPrefix(cleanErr, "ERROR: ")
-						if len(cleanErr) > 200 {
-							cleanErr = cleanErr[:197] + "..."
-						}
-						break
-					}
-				}
+				a.currentGallery.ItemStates[index] = "done"
+				a.galleryMu.Unlock()
 				runtime.EventsEmit(a.ctx, "gallery-status", map[string]interface{}{
-					"index":   index,
-					"status":  "error",
-					"message": cleanErr,
+					"index":  index,
+					"status": "done",
 				})
+				a.finalizeGalleryBatchRun(sessionID)
+				return
 			}
 
+			// ✅ Case 2: Bị cancel
 			if err == context.Canceled || strings.Contains(err.Error(), context.Canceled.Error()) {
 				a.currentGallery.ItemStates[index] = "canceled"
 				a.galleryMu.Unlock()
@@ -1244,13 +1235,26 @@ func (a *App) runGalleryBatchSession(sessionID int64) {
 				return
 			}
 
+			// ✅ Case 3: Lỗi thực sự — làm sạch message rồi emit
+			rawErr := err.Error()
+			cleanErr := rawErr
+			for _, line := range strings.Split(rawErr, "\n") {
+				line = strings.TrimSpace(line)
+				if line != "" {
+					cleanErr = strings.TrimPrefix(line, "gallery download failed: ")
+					cleanErr = strings.TrimPrefix(cleanErr, "ERROR: ")
+					if len(cleanErr) > 200 {
+						cleanErr = cleanErr[:197] + "..."
+					}
+					break
+				}
+			}
 			a.currentGallery.ItemStates[index] = "error"
 			a.galleryMu.Unlock()
-
 			runtime.EventsEmit(a.ctx, "gallery-status", map[string]interface{}{
 				"index":   index,
 				"status":  "error",
-				"message": err.Error(),
+				"message": cleanErr,
 			})
 		}(index, url)
 	}
