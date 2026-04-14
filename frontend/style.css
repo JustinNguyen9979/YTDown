@@ -40,7 +40,7 @@ html, body {
     width: 100%;
     display: flex;
     flex-direction: column;
-    padding: 20px 20px 30px 20px;
+    padding: 20px 20px 2px 20px;
     height: auto !important; /* Luôn ôm sát nội dung */
 }
 
@@ -965,8 +965,8 @@ select:focus {
 /* Batch Progress Table */
 .batch-progress {
     margin-top: 12px;
-    max-height: 400px; /* Giới hạn chiều cao */
-    overflow-y: auto;
+    /* max-height: 200px; Giới hạn chiều cao */
+    /* overflow-y: auto; */
     border: 1px solid transparent;
     border-radius: 8px;
     transition: all 0.3s ease;
@@ -982,12 +982,13 @@ select:focus {
     border-collapse: collapse;
     font-size: 12px;
     margin-bottom: 0px; /* Giảm margin để khít container */
+    table-layout: fixed;
 }
 
 .batch-table thead {
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border-color);
-    position: sticky;
+    /* position: sticky; */
     top: 0;
     z-index: 10;
 }
@@ -1004,8 +1005,9 @@ select:focus {
 #batchTable th:nth-child(2), #batchTable td:nth-child(2) { width: 100px; min-width: 100px; text-align: center; } /* Thumbnail */
 #batchTable td:nth-child(2) { padding-left: 0; padding-right: 0; } /* Remove side padding for thumbnail cell */
 #batchTable th:nth-child(3), #batchTable td:nth-child(3) { 
-    width: 100%; /* Cột Title tự giãn rộng nhất có thể */
-    max-width: 0; 
+    width: auto; /* Cột Title tự giãn rộng nhất có thể */
+    max-width: none; /* Không giới hạn max-width để tận dụng hết không gian còn lại */
+    overflow: hidden;
     text-overflow: ellipsis;
 }
 #batchTable th:nth-child(4), #batchTable td:nth-child(4) { 
@@ -1016,6 +1018,17 @@ select:focus {
     width: 120px; 
     min-width: 120px;
 } /* Progress */
+
+#galleryTable th:nth-child(1), #galleryTable td:nth-child(1) { width: 35px; min-width: 35px; }
+#galleryTable th:nth-child(2), #galleryTable td:nth-child(2) {
+    width: auto;
+    max-width: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-left: 4px;
+}
+#galleryTable th:nth-child(3), #galleryTable td:nth-child(3) { width: 130px; min-width: 130px; }
+#galleryTable th:nth-child(4), #galleryTable td:nth-child(4) { width: 120px; min-width: 120px; }
 
 /* Compress Table Column Widths */
 #compressTable th:nth-child(1), #compressTable td:nth-child(1) { width: 35px; min-width: 35px; }
@@ -1143,6 +1156,8 @@ select:focus {
 
 .status-cell {
     overflow: visible !important;
+    display: table-cell;
+    vertical-align: middle;
 }
 
 .status-with-tooltip {
@@ -1601,9 +1616,12 @@ kbd {
   display: none;
   margin-top: 8px;
   margin-bottom: 4px;
-  display: flex;
   flex-direction: column;
   gap: 4px;
+  max-height: 120px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 59, 48, 0.3) transparent;
 }
 
 .error-log-container.visible {
@@ -1637,9 +1655,6 @@ kbd {
 .status-error {
   color: var(--accent-red);         
   font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 /* 2. Subtle pulsing glow — tạo cảm giác "alert" */
@@ -1668,4 +1683,49 @@ kbd {
 
 .status-error.appear {
   animation: error-shake 0.4s ease-out;
+}
+
+.error-log-container::-webkit-scrollbar {
+  width: 5px;
+}
+
+.error-log-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.error-log-container::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 59, 48, 0.3);
+  border-radius: 10px;
+}
+
+.error-log-container::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 59, 48, 0.55);
+}
+
+/* ✅ Scroll chỉ ở tbody — scrollbar không còn đè lên header */
+.batch-table tbody {
+  display: block;
+  max-height: 160px;       /* ~3 rows */
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.2) transparent;
+}
+.batch-table tbody::-webkit-scrollbar { width: 5px; }
+.batch-table tbody::-webkit-scrollbar-track { background: transparent; }
+.batch-table tbody::-webkit-scrollbar-thumb {
+  background-color: rgba(255,255,255,0.2);
+  border-radius: 10px;
+}
+
+/* ✅ Giữ column width đồng nhau giữa thead và tbody */
+.batch-table thead tr,
+.batch-table tbody tr {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.batch-table thead tr {
+  padding-right: 5px;
 }

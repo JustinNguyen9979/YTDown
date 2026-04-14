@@ -1011,7 +1011,7 @@ function setupGoEvents() {
                     if (data.status === 'error') {
                         const galleryLog = document.getElementById('galleryErrorLog');
                         if (galleryLog) {
-                            galleryLog.style.display = 'flex';
+                            galleryLog.classList.add('visible');
                             const stt = (data.index != null) ? data.index + 1 : '?';
                             let msg = (data.message || 'Download failed')
                                 .split('\n').map(l => l.trim()).filter(l => l.length > 0)[0] || 'Download failed';
@@ -1023,6 +1023,7 @@ function setupGoEvents() {
                             item.className = 'error-log-item';
                             item.innerHTML = `<span class="error-log-stt">#${stt}</span><span class="error-log-msg">${escapeHtml(msg)}</span>`;
                             galleryLog.appendChild(item);
+                            galleryLog.scrollTop = galleryLog.scrollHeight;
                         }
                     }
                 }
@@ -1132,6 +1133,7 @@ function setupGoEvents() {
                             item.className = 'error-log-item';
                             item.innerHTML = `<span class="error-log-stt">#${stt}</span><span class="error-log-msg">${escapeHtml(msg)}</span>`;
                             galleryLog.appendChild(item);
+                            galleryLog.scrollTop = galleryLog.scrollHeight;
                         }
                     }
 
