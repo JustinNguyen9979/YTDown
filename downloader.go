@@ -180,6 +180,7 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 	})
 
 	var finalFilePath string
+	var lastError string
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -189,6 +190,10 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 		// but since we want to catch "hangs", INFO is safer for now.
 		if strings.Contains(line, "ERROR:") || strings.Contains(line, "WARNING:") {
 			LogError("[yt-dlp] %s", line)
+			// ← THÊM: chỉ lưu ERROR, bỏ qua WARNING
+			if strings.Contains(line, "ERROR:") {
+				lastError = strings.TrimSpace(strings.TrimPrefix(line, "ERROR: "))
+			}
 		} else {
 			// Only log important transitions or status updates to app.log to keep it readable
 			// but enough to see where it "hangs"
@@ -274,6 +279,11 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 			return ctx.Err()
 		}
 		LogError("[DL] Command failed with error: %v", err)
+
+		// ← THAY: trả về nội dung lỗi thật thay vì "exit status 1"
+		if lastError != "" {
+			return fmt.Errorf("download failed: %s", lastError)
+		}
 		return fmt.Errorf("download failed: %v", err)
 	}
 

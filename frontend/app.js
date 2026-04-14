@@ -1082,10 +1082,8 @@ function setupGoEvents() {
                     const statusCell = row.querySelector('td:nth-child(3)');
                     if (statusCell) {
                         statusCell.innerHTML = `
-                            <div class="status-with-tooltip" data-tooltip-html="${escapeHtml(data.speed)}">
                                 <span class="status-icon">⏳</span>
                                 <span>Downloading</span>
-                            </div>
                         `;
                     }
                     const fill = row.querySelector('.batch-progress-fill');
@@ -1112,11 +1110,10 @@ function setupGoEvents() {
                     if (statusCell) {
                         const icons = { waiting: '⏳', downloading: '⏳', done: '✅', error: '❌', canceled: '✕' };
                         const status = data.status || 'waiting';
+                        statusCell.className = `status-cell status-${status}`;
                         statusCell.innerHTML = `
-                            <div class="status-with-tooltip" data-tooltip-html="${escapeHtml(data.message || status)}">
                                 <span class="status-icon">${icons[status] || '?'}</span>
                                 <span>${status.charAt(0).toUpperCase() + status.slice(1)}</span>
-                            </div>
                         `;
                     }
                         // Hiển thị lỗi trực tiếp trong cột Progress khi status = error
@@ -1173,10 +1170,8 @@ function setupGoEvents() {
                     if (statusCell) {
                         statusCell.className = 'status-cell status-done';
                         statusCell.innerHTML = `
-                            <div class="status-with-tooltip" data-tooltip-html="All images downloaded.">
                                 <span class="status-icon">✅</span>
                                 <span>Done</span>
-                            </div>
                         `;
                     }
                     const fill = row.querySelector('.batch-progress-fill');
@@ -1907,19 +1902,6 @@ function updateBatchStatus(index, status) {
 }
 
 function updateBatchError(data) {
-  // Cập nhật badge lỗi trong bảng
-  const row = document.getElementById(`batch-row-${data.index}`);
-  if (row) {
-    const statusCell = row.querySelector('td:nth-child(4)');
-    if (statusCell) {
-      statusCell.innerHTML = `<span class="status-badge error">❌ Error</span>`;
-    }
-    const fill = row.querySelector('.batch-progress-fill');
-    const pct  = row.querySelector('.progress-pct');
-    if (fill) fill.style.width = '0%';
-    if (pct)  pct.textContent  = '';
-  }
-
   // Lấy nội dung lỗi
   let errorMsg = '';
   if (data.details && data.details.length > 0) {
@@ -1933,6 +1915,17 @@ function updateBatchError(data) {
       .replace(/^ERROR:\s*/i, '');
   }
   if (!errorMsg) errorMsg = 'Download failed';
+
+  // Cập nhật trạng thái trong bảng
+  renderBatchStatusCell(data.index, 'error', [errorMsg]);
+
+  const row = document.getElementById(`batch-row-${data.index}`);
+  if (row) {
+    const fill = row.querySelector('.batch-progress-fill');
+    const pct  = row.querySelector('.progress-pct');
+    if (fill) fill.style.width = '0%';
+    if (pct)  pct.textContent  = '';
+  }
 
   // Hiển thị xuống khu vực log bên dưới button
   const errorLog = document.getElementById('batchErrorLog');
@@ -1965,10 +1958,8 @@ function renderBatchStatusCell(index, status, details = []) {
 
     statusCell.className = `status-cell status-${status}`;
     statusCell.innerHTML = `
-        <div class="status-with-tooltip" data-tooltip-html="${tooltipHtml}">
-            <span class="status-icon">${icons[status] || '?'}</span>
-            <span>${texts[status] || status}</span>
-        </div>
+        <span class="status-icon">${icons[status] || '?'}</span>
+        <span>${texts[status] || status}</span>
     `;
 }
 

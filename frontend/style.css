@@ -1633,3 +1633,39 @@ kbd {
   color: #ff6b61;
   word-break: break-word;
 }
+
+.status-error {
+  color: var(--accent-red);         
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 2. Subtle pulsing glow — tạo cảm giác "alert" */
+@keyframes error-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.65; }
+}
+
+.status-error {
+  animation: error-pulse 1.8s ease-in-out infinite;
+}
+
+/* 3. Background tint nhẹ cho container — tăng context */
+.status-card.error {
+  border: 1px solid rgba(224, 82, 82, 0.3);
+  background: rgba(224, 82, 82, 0.06);
+}
+
+@keyframes error-shake {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(-4px); }
+  40%       { transform: translateX(4px); }
+  60%       { transform: translateX(-3px); }
+  80%       { transform: translateX(3px); }
+}
+
+.status-error.appear {
+  animation: error-shake 0.4s ease-out;
+}
