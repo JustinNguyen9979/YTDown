@@ -672,6 +672,12 @@ function setupGalleryTab() {
 
         const tbody = document.getElementById('galleryTableBody');
         tbody.innerHTML = ''; 
+            // Xóa error log cũ khi bắt đầu phiên mới
+        const galleryLog = document.getElementById('galleryErrorLog');
+        if (galleryLog) {
+            galleryLog.innerHTML = '';
+            galleryLog.classList.remove('visible'); // ← dùng class thay vì style.display
+        }
 
         urls.forEach((url, i) => {
             const row = document.createElement('tr');
@@ -990,6 +996,24 @@ function setupGoEvents() {
                     } else {
                         alert('You can install dependencies later using:\nbrew install ' + data.missingTools.join(' '));
                     }
+                                    // Hiển thị lỗi vào error log container bên dưới button
+                    if (data.status === 'error') {
+                        const galleryLog = document.getElementById('galleryErrorLog');
+                        if (galleryLog) {
+                            galleryLog.style.display = 'flex';
+                            const stt = (data.index != null) ? data.index + 1 : '?';
+                            let msg = (data.message || 'Download failed')
+                                .split('\n').map(l => l.trim()).filter(l => l.length > 0)[0] || 'Download failed';
+                            msg = msg
+                                .replace(/^gallery download failed:\s*/i, '')
+                                .replace(/^ERROR:\s*/i, '');
+                            if (msg.length > 160) msg = msg.slice(0, 157) + '...';
+                            const item = document.createElement('div');
+                            item.className = 'error-log-item';
+                            item.innerHTML = `<span class="error-log-stt">#${stt}</span><span class="error-log-msg">${escapeHtml(msg)}</span>`;
+                            galleryLog.appendChild(item);
+                        }
+                    }
                 }
             });
             
@@ -1084,6 +1108,25 @@ function setupGoEvents() {
                             </div>
                         `;
                     }
+                        // Hiển thị lỗi trực tiếp trong cột Progress khi status = error
+                    if (data.status === 'error') {
+                        const galleryLog = document.getElementById('galleryErrorLog');
+                        if (galleryLog) {
+                            galleryLog.classList.add('visible');
+                            const stt = (data.index != null) ? data.index + 1 : '?';
+                            let msg = (data.message || 'Download failed')
+                                .split('\n').map(l => l.trim()).filter(l => l.length > 0)[0] || 'Download failed';
+                            msg = msg
+                                .replace(/^gallery download failed:\s*/i, '')
+                                .replace(/^ERROR:\s*/i, '');
+                            if (msg.length > 160) msg = msg.slice(0, 157) + '...';
+                            const item = document.createElement('div');
+                            item.className = 'error-log-item';
+                            item.innerHTML = `<span class="error-log-stt">#${stt}</span><span class="error-log-msg">${escapeHtml(msg)}</span>`;
+                            galleryLog.appendChild(item);
+                        }
+                    }
+
                     if (data.status === 'done') {
                         const fill = row.querySelector('.batch-progress-fill');
                         if (fill) {
@@ -1422,6 +1465,10 @@ function setupBatchTab() {
 
         const tbody = document.getElementById('batchTableBody');
         tbody.innerHTML = '';
+            // Xóa error log cũ khi bắt đầu phiên mới
+        const errorLog = document.getElementById('batchErrorLog');
+        if (errorLog) { errorLog.innerHTML = ''; errorLog.style.display = 'none'; }
+
         state.downloadedFiles = {};
 
         urls.forEach((url, i) => {
@@ -1849,17 +1896,46 @@ function updateBatchStatus(index, status) {
 }
 
 function updateBatchError(data) {
-    if (!data || typeof data.index === 'undefined') return;
-
-    const details = Array.isArray(data.details) && data.details.length > 0
-        ? data.details
-        : [data.error || 'Download failed.'];
-
-    if (data.requiresCookie) {
-        details.unshift('Video này cần xác thực.');
+  // Cập nhật badge lỗi trong bảng
+  const row = document.getElementById(`batch-row-${data.index}`);
+  if (row) {
+    const statusCell = row.querySelector('td:nth-child(4)');
+    if (statusCell) {
+      statusCell.innerHTML = `<span class="status-badge error">❌ Error</span>`;
     }
+    const fill = row.querySelector('.batch-progress-fill');
+    const pct  = row.querySelector('.progress-pct');
+    if (fill) fill.style.width = '0%';
+    if (pct)  pct.textContent  = '';
+  }
 
-    renderBatchStatusCell(data.index, 'error', details);
+  // Lấy nội dung lỗi
+  let errorMsg = '';
+  if (data.details && data.details.length > 0) {
+    errorMsg = data.details.join(' · ');
+  } else if (data.error) {
+    errorMsg = data.error.split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0)[0] || 'Download failed';
+    errorMsg = errorMsg
+      .replace(/^download failed:\s*/i, '')
+      .replace(/^ERROR:\s*/i, '');
+  }
+  if (!errorMsg) errorMsg = 'Download failed';
+
+  // Hiển thị xuống khu vực log bên dưới button
+  const errorLog = document.getElementById('batchErrorLog');
+  if (errorLog) {
+    errorLog.style.display = 'block';
+    const stt = (data.index != null) ? data.index + 1 : '?';
+    const item = document.createElement('div');
+    item.className = 'error-log-item';
+    item.innerHTML = `
+      <span class="error-log-stt">#${stt}</span>
+      <span class="error-log-msg">${escapeHtml(errorMsg)}</span>
+    `;
+    errorLog.appendChild(item);
+  }
 }
 
 function renderBatchStatusCell(index, status, details = []) {

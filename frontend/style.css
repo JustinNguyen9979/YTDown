@@ -1581,3 +1581,55 @@ kbd {
 
 .progress-pct.done  { color: #34c759; }
 .progress-pct.error { color: #ff453a; }
+
+/* Inline error log - hiển thị ngay trong cột Progress */
+.inline-error-log {
+  font-size: 11px;
+  color: #ff3b30;
+  background: rgba(255, 59, 48, 0.08);
+  border: 1px solid rgba(255, 59, 48, 0.2);
+  border-radius: 4px;
+  padding: 3px 7px;
+  line-height: 1.4;
+  word-break: break-word;
+  white-space: normal;
+  max-width: 100%;
+}
+
+/* ── Error Log (hiển thị dưới button download) ── */
+.error-log-container {
+  display: none;
+  margin-top: 8px;
+  margin-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.error-log-container.visible {
+  display: flex;
+}
+
+.error-log-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  background: rgba(255, 59, 48, 0.08);
+  border: 1px solid rgba(255, 59, 48, 0.22);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.error-log-stt {
+  font-weight: 700;
+  color: #ff3b30;
+  min-width: 26px;
+  flex-shrink: 0;
+}
+
+.error-log-msg {
+  color: #ff6b61;
+  word-break: break-word;
+}

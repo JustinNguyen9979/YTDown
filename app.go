@@ -1201,11 +1201,6 @@ func (a *App) runGalleryBatchSession(sessionID int64) {
 			a.currentGallery.ActiveCancels[index] = cancel
 			a.galleryMu.Unlock()
 
-			runtime.EventsEmit(a.ctx, "gallery-status", map[string]interface{}{
-				"index":  index,
-				"status": "downloading",
-			})
-
 			// Convert options to separate arguments if needed
 			err := DownloadGalleryWithOpts(itemCtx, index, url, options)
 
@@ -1219,13 +1214,24 @@ func (a *App) runGalleryBatchSession(sessionID int64) {
 			}
 
 			if err == nil {
-				a.currentGallery.ItemStates[index] = "done"
-				a.galleryMu.Unlock()
+				rawErr := err.Error()
+				cleanErr := rawErr
+				for _, line := range strings.Split(rawErr, "\n") {
+					line = strings.TrimSpace(line)
+					if line != "" {
+						cleanErr = strings.TrimPrefix(line, "gallery download failed: ")
+						cleanErr = strings.TrimPrefix(cleanErr, "ERROR: ")
+						if len(cleanErr) > 200 {
+							cleanErr = cleanErr[:197] + "..."
+						}
+						break
+					}
+				}
 				runtime.EventsEmit(a.ctx, "gallery-status", map[string]interface{}{
-					"index":  index,
-					"status": "done",
+					"index":   index,
+					"status":  "error",
+					"message": cleanErr,
 				})
-				return
 			}
 
 			if err == context.Canceled || strings.Contains(err.Error(), context.Canceled.Error()) {
