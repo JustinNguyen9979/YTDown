@@ -477,20 +477,20 @@ function setupGalleryTab() {
                 { ext: 'jpg', default: true },
                 { ext: 'jpeg', default: true },
                 { ext: 'png', default: true },
-                { ext: 'webp', default: false },
-                { ext: 'gif', default: false },
-                { ext: 'heic', default: false },
-                { ext: 'avif', default: false }
+                { ext: 'webp', default: true },
+                { ext: 'gif', default: true },
+                { ext: 'heic', default: true },
+                { ext: 'avif', default: true }
             ]
         },
         { 
             group: 'Videos', 
             items: [
-                { ext: 'mp4', default: false },
-                { ext: 'webm', default: false },
-                { ext: 'mkv', default: false },
-                { ext: 'mov', default: false },
-                { ext: 'avi', default: false }
+                { ext: 'mp4', default: true },
+                { ext: 'webm', default: true },
+                { ext: 'mkv', default: true },
+                { ext: 'mov', default: true },
+                { ext: 'avi', default: true }
             ]
         }
     ];
@@ -545,6 +545,7 @@ function setupGalleryTab() {
         });
 
         formatCheckboxes = mediaListContainer.querySelectorAll('input[type="checkbox"]');
+        if (allCheckbox) allCheckbox.checked = true;
 
         const updateStartBtnState = () => {
             const btn = document.getElementById('startGalleryBtn');

@@ -53,7 +53,30 @@ func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, opti
 		return fmt.Errorf("xhs: no downloadable assets found")
 	}
 
+	// ✅ THÊM: Apply file type filter — đồng bộ với gallery.go behavior
+	if info.Type == "image" && !options.AllFormats && len(options.Formats) > 0 {
+		original := len(urls)
+		var filtered []string
+		for _, u := range urls {
+			// detectXHSExt trả về ".jpg", ".png"... → cắt dấu chấm để so sánh
+			ext := strings.TrimPrefix(detectXHSExt(u), ".")
+			for _, f := range options.Formats {
+				if strings.EqualFold(ext, f) {
+					filtered = append(filtered, u)
+					break
+				}
+			}
+		}
+		urls = filtered
+		fmt.Printf("[XHS] 🔍 File type filter: %d/%d assets kept (types: %v)\n",
+			len(urls), original, options.Formats)
+		if len(urls) == 0 {
+			return fmt.Errorf("xhs: no assets matched the selected file types: %v", options.Formats)
+		}
+	}
+
 	client := &http.Client{Timeout: fetchOptions.Timeout}
+
 	var failedCount int
 	for i, assetURL := range urls {
 		targetPath := filepath.Join(targetDir, buildXHSFilename(i+1, assetURL))
