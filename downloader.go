@@ -86,7 +86,7 @@ func ResolveShortURL(url string, userAgent string) string {
 }
 
 // DownloadVideo downloads a video using yt-dlp
-func DownloadVideo(ctx context.Context, index int, url, format, quality, savePath string) error {
+func DownloadVideo(ctx context.Context, index int, url, format, quality, savePath string, noPlaylist bool) error {
 	ytdlpPath := getResourcePath("yt-dlp")
 
 	// Force using system/brew ffmpeg and IGNORE bundled one
@@ -130,7 +130,7 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 	}
 
 	// Build yt-dlp arguments based on format and quality
-	args := buildDownloadArgs(ctx, url, format, quality, savePath, ffmpegPath)
+	args := buildDownloadArgs(ctx, url, format, quality, savePath, ffmpegPath, noPlaylist)
 	args = append(args, url)
 	// Add verbose for better debugging in app.log
 	// args = append(args, "--verbose")
@@ -188,6 +188,8 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 
 	for scanner.Scan() {
 		line := scanner.Text()
+
+		// fmt.Println("[yt-dlp]", line)
 
 		// Log every line from yt-dlp for debugging, but prefix it to distinguish
 		// We'll use LogDebug for regular progress to avoid cluttering INFO if needed,
@@ -303,7 +305,7 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 }
 
 // buildDownloadArgs builds yt-dlp command arguments
-func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmpegPath string) []string {
+func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmpegPath string, noPlaylist bool) []string {
 	args := []string{}
 
 	switch format {
@@ -382,14 +384,24 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 		)
 	}
 
-	// Common arguments
+	// Common flags
 	args = append(args,
-		"--no-playlist",
+		"--concurrent-fragments", "10",
 		"--no-continue",
 		"--force-overwrites",
 		"--windows-filenames",
-		"-o", filepath.Join(savePath, "%(title)s [%(id)s].%(ext)s"),
 	)
+
+	// Playlist mode và output template
+	playlistFlag := "--no-playlist"
+	outputTemplate := filepath.Join(savePath, "%(title)s [%(id)s].%(ext)s")
+
+	if !noPlaylist {
+		playlistFlag = "--yes-playlist"
+		outputTemplate = filepath.Join(savePath, "%(playlist_title)s", "%(playlist_index)s - %(title)s [%(id)s].%(ext)s")
+	}
+
+	args = append(args, playlistFlag, "-o", outputTemplate)
 
 	// Set appropriate referer
 	if IsXiaohongshu(url) {

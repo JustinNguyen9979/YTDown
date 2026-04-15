@@ -1285,6 +1285,8 @@ function applyBatchControlState(status) {
     const isPaused = status === 'paused';
     const hasSession = isRunning || isPaused;
 
+    const noPlaylistCheckbox = document.getElementById('noPlaylistCheckbox');
+
     startBtn.hidden = false;
     pauseBtn.hidden = !hasSession;
     cancelBtn.hidden = !hasSession;
@@ -1319,6 +1321,11 @@ function applyBatchControlState(status) {
     if (savePathInput) savePathInput.disabled = isRunning || isPaused;
 
     refreshCustomSelectStates();
+    
+    if (noPlaylistCheckbox) {
+        noPlaylistCheckbox.disabled = isRunning || isPaused;
+    }
+
 }
 
 function setupBatchTab() {
@@ -1456,6 +1463,8 @@ function setupBatchTab() {
         const errorLog = document.getElementById('batchErrorLog');
         if (errorLog) { errorLog.innerHTML = ''; errorLog.style.display = 'none'; }
 
+        const noPlaylist = document.getElementById('noPlaylistCheckbox')?.checked ?? true;
+
         state.downloadedFiles = {};
 
         urls.forEach((url, i) => {
@@ -1478,7 +1487,8 @@ function setupBatchTab() {
                 formatSelect.value,
                 qualitySelect.value,
                 savePathInput.value,
-                maxConcurrent
+                maxConcurrent,
+                noPlaylist
             );
             if (typeof result === 'string' && result.startsWith('Error:')) {
                 throw new Error(result);

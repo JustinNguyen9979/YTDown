@@ -62,11 +62,11 @@ export function SetManualCookie(arg1:string):Promise<void>;
 
 export function SetTemporaryYouTubeCookie(arg1:string):Promise<void>;
 
-export function StartBatchDownload(arg1:Array<string>,arg2:string,arg3:string,arg4:string,arg5:number):Promise<string>;
+export function StartBatchDownload(arg1:Array<string>,arg2:string,arg3:string,arg4:string,arg5:number,arg6:boolean):Promise<string>;
 
 export function StartCompression(arg1:Array<string>,arg2:main.CompressionOptions):Promise<void>;
 
-export function StartDownload(arg1:string,arg2:string,arg3:string,arg4:string):Promise<string>;
+export function StartDownload(arg1:string,arg2:string,arg3:string,arg4:string,arg5:boolean):Promise<string>;
 
 export function StartGalleryBatchDownload(arg1:Array<string>,arg2:main.GalleryDownloadOptions):Promise<string>;
 
