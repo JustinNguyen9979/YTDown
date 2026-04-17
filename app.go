@@ -436,13 +436,20 @@ func (a *App) GetCookieConfig() CookieConfig {
 	return manager.config
 }
 
-// UpdateCookieConfig updates the cookie configuration
 func (a *App) UpdateCookieConfig(mode string, browser string) error {
 	manager.mu.Lock()
 	manager.config.Mode = CookieMode(mode)
 	manager.config.SelectedBrowser = browser
 	manager.mu.Unlock()
 	manager.SaveConfig()
+
+	if mode == string(CookieModeBrowser) && browser != "" {
+		// Prefetch User-Agent asynchronously so it's ready when downloading
+		go func(b string) {
+			manager.GetUA()
+		}(browser)
+	}
+
 	return nil
 }
 

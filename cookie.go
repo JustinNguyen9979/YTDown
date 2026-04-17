@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/browserutils/kooky"
+	_ "github.com/browserutils/kooky/browser/all"
 )
 
 // CookieMode defines how cookies are handled
@@ -38,11 +42,29 @@ type temporaryCookieState struct {
 	xhsSession    string    // Cache for Xiaohongshu session
 	xhsCacheTime  time.Time // When the cache was last updated
 	xhsExtracting bool
+
+	cachedUA      string
+	fetchingUA    bool
+
+	domainBrowserData map[string]*BrowserExportData
 }
 
 type parsedCookie struct {
-	Name  string
-	Value string
+	Domain  string `json:"domain,omitempty"`
+	Path    string `json:"path,omitempty"`
+	Name    string `json:"name"`
+	Value   string `json:"value"`
+	Secure  bool   `json:"secure,omitempty"`
+	Expires int64  `json:"expires,omitempty"`
+}
+
+type BrowserExportData struct {
+	BrowserName string            `json:"browser"`
+	UserAgent   string            `json:"user_agent"`
+	WebSession  string            `json:"web_session,omitempty"`
+	Cookies     []parsedCookie    `json:"cookies"`
+	Headers     map[string]string `json:"headers,omitempty"`
+	ExportTime  time.Time         `json:"-"`
 }
 
 // GetInstalledBrowsers returns IDs of supported browsers actually installed on the system
@@ -83,23 +105,51 @@ func (m *CookieManager) GetUA() string {
 		browser = "safari"
 	}
 
-	// Try to get the actual User-Agent that yt-dlp would use for this browser
+	m.state.mu.RLock()
+	cached := m.state.cachedUA
+	fetching := m.state.fetchingUA
+	m.state.mu.RUnlock()
+
+	if cached != "" {
+		return cached
+	}
+
+	if !fetching {
+		m.state.mu.Lock()
+		m.state.fetchingUA = true
+		m.state.mu.Unlock()
+
+		go func(b string) {
+			ua := m.fetchUAViaYTDLP(b)
+			m.state.mu.Lock()
+			if ua != "" {
+				m.state.cachedUA = ua
+			}
+			m.state.fetchingUA = false
+			m.state.mu.Unlock()
+		}(browser)
+	}
+
+	// Fallback to manual construction while yt-dlp is fetching
+	return m.getFallbackUA(browser)
+}
+
+func (m *CookieManager) fetchUAViaYTDLP(browser string) string {
 	ytdlp := getResourcePath("yt-dlp")
 	if ytdlp != "" {
-		// We ask for the user_agent it would use with this browser
 		cmd := exec.Command(ytdlp, "--cookies-from-browser", browser, "--print", "user_agent", "--terminate-on-connect", "https://www.google.com")
-		// Dùng CombinedOutput để bắt output dù exit code != 0
-		out, _ := cmd.Output() // Bỏ qua err vì --terminate-on-connect luôn exit != 0
+		out, _ := cmd.Output()
 		if len(out) > 0 {
 			ua := strings.TrimSpace(string(out))
-			// Đảm bảo output là UA string thật, không phải log line của yt-dlp
 			if ua != "" && !strings.HasPrefix(ua, "[") && strings.Contains(ua, "Mozilla") {
 				return ua
 			}
 		}
 	}
+	return ""
+}
 
-	// Fallback to manual construction if yt-dlp fails or is not available
+func (m *CookieManager) getFallbackUA(browser string) string {
 	osVersion := getMacOSVersion()
 	osVersionUA := strings.ReplaceAll(osVersion, ".", "_")
 	version := getBrowserVersionDynamic(browser)
@@ -157,14 +207,18 @@ func getMacOSVersion() string {
 
 // Global cookie state manager
 type CookieManager struct {
-	mu     sync.RWMutex
-	config CookieConfig
-	state  temporaryCookieState
+	mu           sync.RWMutex
+	config       CookieConfig
+	state        temporaryCookieState
+	extractionMu sync.Mutex
 }
 
 var manager = &CookieManager{
 	config: CookieConfig{
 		Mode: CookieModeNone,
+	},
+	state: temporaryCookieState{
+		domainBrowserData: make(map[string]*BrowserExportData),
 	},
 }
 
@@ -304,27 +358,49 @@ func (m *CookieManager) GetCookieArgs(ctx context.Context, tool string, url stri
 	switch cfg.Mode {
 	case CookieModeBrowser:
 		if cfg.SelectedBrowser != "" {
-			// Special handling for Xiaohongshu: extract web_session and add as header
-			if isXHS && tool == "yt-dlp" {
-				fmt.Printf("[Cookie] 🔍 Detecting Xiaohongshu, trying to extract web_session from %s...\n", cfg.SelectedBrowser)
-				session := m.extractWebSessionFromBrowser(ctx, cfg.SelectedBrowser, url)
-				if session != "" {
-					// Use --add-headers (plural) as in the user's successful command
-					args = append(args, "--add-headers", "Cookie: web_session="+session)
-					LogInfo("[Cookie] Successfully extracted web_session from %s: %s", cfg.SelectedBrowser, session)
-					fmt.Printf("[Cookie] ✅ Found web_session: %s\n", session)
-
-					// Re-enable browser cookies so yt-dlp can get the rest of the context
-					args = append(args, "--cookies-from-browser", cfg.SelectedBrowser)
-				} else {
-					LogWarning("[Cookie] Could NOT find web_session in %s cookies. Make sure you are logged in to Xiaohongshu.", cfg.SelectedBrowser)
-					fmt.Printf("[Cookie] ❌ Failed to find web_session in %s. Please check login status.\n", cfg.SelectedBrowser)
-					// Fallback to regular browser cookies if extraction failed
-					args = append(args, "--cookies-from-browser", cfg.SelectedBrowser)
+			data, err := m.GetBrowserData(ctx, cfg.SelectedBrowser, url)
+			
+			if err == nil && data != nil && len(data.Cookies) > 0 {
+				tempFile, err := writeParsedCookiesToNetscapeFile(data.Cookies)
+				if err == nil && tempFile != "" {
+					args = append(args, "--cookies", tempFile)
+				}
+				if data.UserAgent != "" {
+					switch tool {
+					case "yt-dlp":
+						args = append(args, "--user-agent", data.UserAgent)
+					case "gallery-dl":
+						args = append(args, "-o", "http.headers.User-Agent="+data.UserAgent)
+					}
+				}
+				
+				if isXHS && tool == "yt-dlp" {
+					if data.WebSession != "" {
+						args = append(args, "--add-headers", "Cookie: web_session=" + data.WebSession)
+						fmt.Printf("[Cookie] ✅ Found web_session via kooky: %s\n", data.WebSession)
+					} else {
+						LogWarning("[Cookie] Could NOT find web_session in %s cookies.", cfg.SelectedBrowser)
+						fmt.Printf("[Cookie] ❌ Failed to find web_session in %s. Please check login status.\n", cfg.SelectedBrowser)
+					}
 				}
 			} else {
-				// Regular browser cookie handling for other sites
-				args = append(args, "--cookies-from-browser", cfg.SelectedBrowser)
+				// Fallback to yt-dlp native extraction
+				if isXHS && tool == "yt-dlp" {
+					fmt.Printf("[Cookie] 🔍 Detecting Xiaohongshu, trying to extract web_session from %s via yt-dlp...\n", cfg.SelectedBrowser)
+					session := m.extractWebSessionFromBrowser(ctx, cfg.SelectedBrowser, url)
+					if session != "" {
+						args = append(args, "--add-headers", "Cookie: web_session="+session)
+						LogInfo("[Cookie] Successfully extracted web_session from %s: %s", cfg.SelectedBrowser, session)
+						fmt.Printf("[Cookie] ✅ Found web_session via yt-dlp: %s\n", session)
+						args = append(args, "--cookies-from-browser", cfg.SelectedBrowser)
+					} else {
+						LogWarning("[Cookie] Could NOT find web_session in %s cookies. Make sure you are logged in to Xiaohongshu.", cfg.SelectedBrowser)
+						fmt.Printf("[Cookie] ❌ Failed to find web_session in %s. Please check login status.\n", cfg.SelectedBrowser)
+						args = append(args, "--cookies-from-browser", cfg.SelectedBrowser)
+					}
+				} else {
+					args = append(args, "--cookies-from-browser", cfg.SelectedBrowser)
+				}
 			}
 		}
 	case CookieModeManual:
@@ -355,6 +431,239 @@ func (m *CookieManager) GetCookieArgs(ctx context.Context, tool string, url stri
 
 	}
 	return args
+}
+
+func (m *CookieManager) GetBrowserData(ctx context.Context, browser string, targetURL string) (*BrowserExportData, error) {
+	parsed, _ := url.Parse(targetURL)
+	targetHost := ""
+	if parsed != nil {
+		targetHost = parsed.Hostname()
+	}
+
+	baseDomain := ""
+	if targetHost != "" {
+		parts := strings.Split(targetHost, ".")
+		if len(parts) >= 2 {
+			baseDomain = parts[len(parts)-2] + "." + parts[len(parts)-1]
+		}
+	}
+	if baseDomain == "" {
+		baseDomain = "unknown"
+	}
+
+	cacheKey := browser + "|" + baseDomain
+
+	m.state.mu.RLock()
+	if m.state.domainBrowserData == nil {
+		m.state.mu.RUnlock()
+		m.state.mu.Lock()
+		m.state.domainBrowserData = make(map[string]*BrowserExportData)
+		m.state.mu.Unlock()
+		m.state.mu.RLock()
+	}
+	data := m.state.domainBrowserData[cacheKey]
+	m.state.mu.RUnlock()
+
+	if data != nil && time.Since(data.ExportTime) < 5*time.Minute {
+		return data, nil
+	}
+
+	m.extractionMu.Lock()
+	defer m.extractionMu.Unlock()
+
+	m.state.mu.RLock()
+	data = m.state.domainBrowserData[cacheKey]
+	m.state.mu.RUnlock()
+
+	if data != nil && time.Since(data.ExportTime) < 5*time.Minute {
+		return data, nil
+	}
+
+	newData, err := m.ExtractBrowserDataForDomain(ctx, browser, targetHost)
+	if err != nil {
+		return nil, err
+	}
+
+	m.state.mu.Lock()
+	m.state.domainBrowserData[cacheKey] = newData
+	m.state.mu.Unlock()
+
+	return newData, nil
+}
+
+func (m *CookieManager) ExtractBrowserDataForDomain(ctx context.Context, browser string, targetHost string) (*BrowserExportData, error) {
+	stores := kooky.FindAllCookieStores(ctx)
+	
+	var allCookies []parsedCookie
+	var xhsSession string
+
+	var relevantDomains []string
+	if targetHost != "" {
+		parts := strings.Split(targetHost, ".")
+		if len(parts) >= 2 {
+			base := parts[len(parts)-2] + "." + parts[len(parts)-1]
+			relevantDomains = append(relevantDomains, base)
+		}
+	}
+	// Special domain logic
+	if strings.Contains(targetHost, "youtube.com") || strings.Contains(targetHost, "youtu.be") {
+		relevantDomains = []string{"youtube.com"} // ONLY youtube.com, removed google.com per user request
+	} else if strings.Contains(targetHost, "xiaohongshu.com") || strings.Contains(targetHost, "xhslink.com") {
+		relevantDomains = []string{"xiaohongshu.com", "xhslink.com"}
+	}
+
+	var filters []kooky.Filter
+	filters = append(filters, kooky.Valid)
+
+	cookieMap := make(map[string]parsedCookie)
+
+	getBaseDomain := func(d string) string {
+		d = strings.TrimPrefix(d, ".")
+		parts := strings.Split(d, ".")
+		if len(parts) >= 2 {
+			return parts[len(parts)-2] + "." + parts[len(parts)-1]
+		}
+		return d
+	}
+
+	for _, store := range stores {
+		if strings.EqualFold(store.Browser(), browser) {
+			cookies := store.TraverseCookies(filters...).Collect(ctx)
+			for _, c := range cookies {
+				// domain filter
+				if len(relevantDomains) > 0 {
+					matched := false
+					for _, rd := range relevantDomains {
+						if strings.HasSuffix(c.Domain, rd) {
+							matched = true
+							break
+						}
+					}
+					if !matched {
+						continue
+					}
+				}
+
+				// skip excessively large cookies (YouTube max header is 8KB)
+				if len(c.Name)+len(c.Value) > 1000 {
+					continue
+				}
+
+				baseDom := getBaseDomain(c.Domain)
+				key := fmt.Sprintf("%s|%s", baseDom, c.Name) // Strict deduplication by base domain and name
+				
+				// Prefer cookies with actual values if a duplicate exists
+				if existing, exists := cookieMap[key]; exists {
+					if c.Value != "" && existing.Value == "" {
+						cookieMap[key] = parsedCookie{
+							Domain: c.Domain,
+							Path: c.Path,
+							Name: c.Name,
+							Value: c.Value,
+							Secure: c.Secure,
+							Expires: c.Expires.Unix(),
+						}
+					}
+				} else {
+					cookieMap[key] = parsedCookie{
+						Domain: c.Domain,
+						Path: c.Path,
+						Name: c.Name,
+						Value: c.Value,
+						Secure: c.Secure,
+						Expires: c.Expires.Unix(),
+					}
+				}
+
+				if (strings.Contains(c.Domain, "xiaohongshu.com") || strings.Contains(c.Domain, "xhslink.com")) && c.Name == "web_session" {
+					xhsSession = c.Value
+				}
+			}
+		}
+	}
+
+	for _, c := range cookieMap {
+		allCookies = append(allCookies, c)
+	}
+
+	ua := m.GetUA()
+
+	data := &BrowserExportData{
+		BrowserName: browser,
+		UserAgent:   ua,
+		WebSession:  xhsSession,
+		Cookies:     allCookies,
+		Headers:     make(map[string]string),
+		ExportTime:  time.Now(),
+	}
+
+	if xhsSession != "" {
+		data.Headers["Cookie"] = "web_session=" + xhsSession
+	}
+
+	return data, nil
+}
+
+func (m *CookieManager) exportBrowserDataToJSON(data *BrowserExportData) {
+	dir := GetConfigDir()
+	if dir == "" {
+		return
+	}
+	path := filepath.Join(dir, "browser_export.json")
+	bytes, _ := json.MarshalIndent(data, "", "  ")
+	_ = os.WriteFile(path, bytes, 0644)
+}
+
+func writeParsedCookiesToNetscapeFile(cookies []parsedCookie) (string, error) {
+	dir := filepath.Join(os.TempDir(), "ytdown")
+	os.MkdirAll(dir, 0755)
+	
+	tmpFile, err := os.CreateTemp(dir, "cookies-*.txt")
+	if err != nil {
+		return "", err
+	}
+	path := tmpFile.Name()
+	defer tmpFile.Close()
+
+	tmpFile.WriteString("# Netscape HTTP Cookie File\n")
+	
+	LogInfo("[Cookie] Writing %d cookies to %s", len(cookies), path)
+	var cookieNames []string
+	
+	for _, c := range cookies {
+		domain := c.Domain
+		if domain == "" {
+			continue 
+		}
+		
+		if !strings.HasPrefix(domain, ".") {
+			domain = "." + domain
+		}
+		domainSpecified := "TRUE"
+		
+		cPath := c.Path
+		if cPath == "" { cPath = "/" }
+		secure := "FALSE"
+		if c.Secure { secure = "TRUE" }
+		expires := c.Expires
+		if expires <= 0 { expires = 2147483647 }
+		
+		name := strings.ReplaceAll(c.Name, "\n", "")
+		name = strings.ReplaceAll(name, "\r", "")
+		name = strings.ReplaceAll(name, "\t", "%09")
+		
+		value := strings.ReplaceAll(c.Value, "\n", "")
+		value = strings.ReplaceAll(value, "\r", "")
+		value = strings.ReplaceAll(value, "\t", "%09")
+		
+		line := fmt.Sprintf("%s\t%s\t%s\t%s\t%d\t%s\t%s\n", domain, domainSpecified, cPath, secure, expires, name, value)
+		tmpFile.WriteString(line)
+		
+		cookieNames = append(cookieNames, name)
+	}
+	
+	LogInfo("[Cookie] Included cookies: %s", strings.Join(cookieNames, ", "))
+	return path, nil
 }
 
 var xhsDomains = []string{
@@ -637,6 +946,9 @@ func clearManualCookie() {
 	manager.state.cookies = nil
 	manager.state.xhsSession = ""
 	manager.state.xhsCacheTime = time.Time{}
+	manager.state.cachedUA = ""
+	manager.state.fetchingUA = false
+	manager.state.domainBrowserData = nil
 	manager.state.mu.Unlock()
 
 	manager.mu.Lock()
