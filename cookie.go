@@ -43,8 +43,8 @@ type temporaryCookieState struct {
 	xhsCacheTime  time.Time // When the cache was last updated
 	xhsExtracting bool
 
-	cachedUA      string
-	fetchingUA    bool
+	cachedUA   string
+	fetchingUA bool
 
 	domainBrowserData map[string]*BrowserExportData
 }
@@ -359,7 +359,7 @@ func (m *CookieManager) GetCookieArgs(ctx context.Context, tool string, url stri
 	case CookieModeBrowser:
 		if cfg.SelectedBrowser != "" {
 			data, err := m.GetBrowserData(ctx, cfg.SelectedBrowser, url)
-			
+
 			if err == nil && data != nil && len(data.Cookies) > 0 {
 				tempFile, err := writeParsedCookiesToNetscapeFile(data.Cookies)
 				if err == nil && tempFile != "" {
@@ -373,10 +373,10 @@ func (m *CookieManager) GetCookieArgs(ctx context.Context, tool string, url stri
 						args = append(args, "-o", "http.headers.User-Agent="+data.UserAgent)
 					}
 				}
-				
+
 				if isXHS && tool == "yt-dlp" {
 					if data.WebSession != "" {
-						args = append(args, "--add-headers", "Cookie: web_session=" + data.WebSession)
+						args = append(args, "--add-headers", "Cookie: web_session="+data.WebSession)
 						fmt.Printf("[Cookie] ✅ Found web_session via kooky: %s\n", data.WebSession)
 					} else {
 						LogWarning("[Cookie] Could NOT find web_session in %s cookies.", cfg.SelectedBrowser)
@@ -493,7 +493,7 @@ func (m *CookieManager) GetBrowserData(ctx context.Context, browser string, targ
 
 func (m *CookieManager) ExtractBrowserDataForDomain(ctx context.Context, browser string, targetHost string) (*BrowserExportData, error) {
 	stores := kooky.FindAllCookieStores(ctx)
-	
+
 	var allCookies []parsedCookie
 	var xhsSession string
 
@@ -551,26 +551,26 @@ func (m *CookieManager) ExtractBrowserDataForDomain(ctx context.Context, browser
 
 				baseDom := getBaseDomain(c.Domain)
 				key := fmt.Sprintf("%s|%s", baseDom, c.Name) // Strict deduplication by base domain and name
-				
+
 				// Prefer cookies with actual values if a duplicate exists
 				if existing, exists := cookieMap[key]; exists {
 					if c.Value != "" && existing.Value == "" {
 						cookieMap[key] = parsedCookie{
-							Domain: c.Domain,
-							Path: c.Path,
-							Name: c.Name,
-							Value: c.Value,
-							Secure: c.Secure,
+							Domain:  c.Domain,
+							Path:    c.Path,
+							Name:    c.Name,
+							Value:   c.Value,
+							Secure:  c.Secure,
 							Expires: c.Expires.Unix(),
 						}
 					}
 				} else {
 					cookieMap[key] = parsedCookie{
-						Domain: c.Domain,
-						Path: c.Path,
-						Name: c.Name,
-						Value: c.Value,
-						Secure: c.Secure,
+						Domain:  c.Domain,
+						Path:    c.Path,
+						Name:    c.Name,
+						Value:   c.Value,
+						Secure:  c.Secure,
 						Expires: c.Expires.Unix(),
 					}
 				}
@@ -617,7 +617,7 @@ func (m *CookieManager) exportBrowserDataToJSON(data *BrowserExportData) {
 func writeParsedCookiesToNetscapeFile(cookies []parsedCookie) (string, error) {
 	dir := filepath.Join(os.TempDir(), "ytdown")
 	os.MkdirAll(dir, 0755)
-	
+
 	tmpFile, err := os.CreateTemp(dir, "cookies-*.txt")
 	if err != nil {
 		return "", err
@@ -626,42 +626,48 @@ func writeParsedCookiesToNetscapeFile(cookies []parsedCookie) (string, error) {
 	defer tmpFile.Close()
 
 	tmpFile.WriteString("# Netscape HTTP Cookie File\n")
-	
+
 	LogInfo("[Cookie] Writing %d cookies to %s", len(cookies), path)
 	var cookieNames []string
-	
+
 	for _, c := range cookies {
 		domain := c.Domain
 		if domain == "" {
-			continue 
+			continue
 		}
-		
+
 		if !strings.HasPrefix(domain, ".") {
 			domain = "." + domain
 		}
 		domainSpecified := "TRUE"
-		
+
 		cPath := c.Path
-		if cPath == "" { cPath = "/" }
+		if cPath == "" {
+			cPath = "/"
+		}
 		secure := "FALSE"
-		if c.Secure { secure = "TRUE" }
+		if c.Secure {
+			secure = "TRUE"
+		}
 		expires := c.Expires
-		if expires <= 0 { expires = 2147483647 }
-		
+		if expires <= 0 {
+			expires = 2147483647
+		}
+
 		name := strings.ReplaceAll(c.Name, "\n", "")
 		name = strings.ReplaceAll(name, "\r", "")
 		name = strings.ReplaceAll(name, "\t", "%09")
-		
+
 		value := strings.ReplaceAll(c.Value, "\n", "")
 		value = strings.ReplaceAll(value, "\r", "")
 		value = strings.ReplaceAll(value, "\t", "%09")
-		
+
 		line := fmt.Sprintf("%s\t%s\t%s\t%s\t%d\t%s\t%s\n", domain, domainSpecified, cPath, secure, expires, name, value)
 		tmpFile.WriteString(line)
-		
+
 		cookieNames = append(cookieNames, name)
 	}
-	
+
 	LogInfo("[Cookie] Included cookies: %s", strings.Join(cookieNames, ", "))
 	return path, nil
 }
@@ -822,7 +828,7 @@ func setManualCookie(raw string) error {
 		".pinterest.com",
 		".linkedin.com",
 		".xiaohongshu.com",
-		".xhsapp.com",
+		".xhslink.com",
 	}
 
 	tempFile, err := writeMultiDomainCookieFile(cookies, commonDomains)
