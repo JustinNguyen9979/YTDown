@@ -385,7 +385,7 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 	}
 
 	if concurrentFragments < 1 {
-		concurrentFragments = 4 // default value if invalid
+		concurrentFragments = 2 // default value if invalid
 	}
 
 	// Common flags

@@ -890,7 +890,7 @@ func (a *App) CancelBatchDownload() error {
 
 // RetryDownload retries downloading a failed video
 func (a *App) RetryDownload(url, format, quality, savePath string) string {
-	return a.StartDownload(url, format, quality, savePath, false, 4)
+	return a.StartDownload(url, format, quality, savePath, false, 2)
 }
 
 func (a *App) SetManualCookie(raw string) error {

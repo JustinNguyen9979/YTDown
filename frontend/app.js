@@ -9,7 +9,7 @@ const state = {
     currentQuality: 'Best Quality',
     batchThreads: 3,
     galleryThreads: 3,
-    connections: 4,
+    connections: 2,
     wailsReady: false,
     selectedCompressFiles: [],
     cookieConfig: {
@@ -67,7 +67,7 @@ function populateSelectOptions() {
     },
     { id: 'batchThreadsSelect',   defaultValue: '3', options: threads },
     { id: 'galleryThreadsSelect', defaultValue: '3', options: threads },
-    { id: 'connectionsSelect', defaultValue: '4', options: threads },
+    { id: 'connectionsSelect', defaultValue: '2', options: threads },
     {
       id: 'compressType',
       defaultValue: 'image',
@@ -1280,6 +1280,7 @@ function applyBatchControlState(status) {
     const threadsSelect = document.getElementById('batchThreadsSelect');
     const browseBtn = document.getElementById('browseBatchBtn');
     const savePathInput = document.getElementById('batchSavePath');
+    const connectionsSelect = document.getElementById('connectionsSelect');
 
     if (!startBtn || !pauseBtn || !cancelBtn || !clearBtn) return;
 
@@ -1321,6 +1322,7 @@ function applyBatchControlState(status) {
     if (threadsSelect) threadsSelect.disabled = isRunning;
     if (browseBtn) browseBtn.disabled = isRunning || isPaused;
     if (savePathInput) savePathInput.disabled = isRunning || isPaused;
+    if (connectionsSelect) connectionsSelect.disabled = isRunning || isPaused;
 
     refreshCustomSelectStates();
     
@@ -1345,7 +1347,6 @@ function setupBatchTab() {
     const cookieInline = document.getElementById('cookieInline');
     const cookieInput = document.getElementById('cookieInput');
     const confirmCookieBtn = document.getElementById('confirmCookieBtn');
-    const connectionsSelect = document.getElementById('connectionsSelect');
 
     if (!clearBtn || !startBtn || !pauseBtn || !cancelBtn) return;
 
@@ -1358,13 +1359,11 @@ function setupBatchTab() {
         });
     }
 
-    if (connectionsSelect) connectionsSelect.disabled = isRunning;
-
     if (connectionsSelect) {
         connectionsSelect.value = String(state.connections);
         connectionsSelect.addEventListener('change', (event) => {
             const value = Number.parseInt(event.target.value, 10);
-            state.connections = Number.isNaN(value) ? 4 : Math.min(Math.max(value, 1), 10);
+            state.connections = Number.isNaN(value) ? 2 : Math.min(Math.max(value, 1), 10);
             connectionsSelect.value = String(state.connections);
         });
     }

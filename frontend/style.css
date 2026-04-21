@@ -474,7 +474,7 @@ body {
 }
 
 #batch .settings, #gallery .settings {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 0.7fr) minmax(0, 0.7fr);
 }
 
 .custom-option.multi {
@@ -1729,3 +1729,4 @@ kbd {
 .batch-table thead tr {
   padding-right: 5px;
 }
+
