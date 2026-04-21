@@ -256,6 +256,7 @@ async function initializeApp() {
         refreshCookieUI();
     }
     
+    initTooltips();
     console.log('[BOOT] Initialization complete!');
 }
 

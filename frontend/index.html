@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YTDown</title>
     <link rel="stylesheet" href="style.css">
+    <script src="tooltips.js"></script>
 </head>
 <body>
     <div class="container">
@@ -56,22 +57,42 @@
 
             <div class="settings">
                 <div class="setting-row">
-                    <label>Format:</label>
+                    <label>Format: 
+                        <span class="info-icon" data-tooltip="format">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                            <span class="tooltip-text"></span>
+                        </span>
+                    </label>
                     <select id="batchFormatSelect"></select>
                 </div>
 
                 <div class="setting-row" id="batchQualityRow">
-                    <label>Quality:</label>
+                    <label>Quality: 
+                        <span class="info-icon" data-tooltip="quality">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                            <span class="tooltip-text"></span>
+                        </span>
+                    </label>
                     <select id="batchQualitySelect"></select>
                 </div>
 
                 <div class="setting-row setting-row-right" id="batchThreadsRow">
-                    <label>Threads:</label>
+                    <label>Threads: 
+                        <span class="info-icon" data-tooltip="threads">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                            <span class="tooltip-text"></span>
+                        </span>
+                    </label>
                     <select id="batchThreadsSelect"></select>
                 </div>
 
                 <div class="setting-row setting-row-right" id="connectionsRow">
-                    <label>Connections:</label>
+                    <label>Connections: 
+                        <span class="info-icon" data-tooltip="connections">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                            <span class="tooltip-text"></span>
+                        </span>
+                    </label>
                     <select id="connectionsSelect"></select>
                 </div>
 

@@ -354,6 +354,78 @@ body {
     color: #3fb950;
 }
 
+/* Tooltip styles */
+.info-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 13px;
+    height: 13px;
+    color: var(--text-secondary);
+    cursor: help;
+    margin-left: 6px;
+    position: relative;
+    vertical-align: middle;
+    transition: all 0.2s ease;
+    opacity: 0.7;
+    top: -1px; /* Nhích lên trên 1px để cân bằng với dòng chữ */
+}
+
+.info-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.info-icon:hover {
+    color: var(--accent-blue);
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+.tooltip-text {
+    visibility: hidden;
+    width: 200px;
+    background-color: #252525;
+    color: #fff;
+    text-align: left;
+    border-radius: 8px;
+    padding: 10px;
+    position: absolute;
+    z-index: 1001;
+    bottom: 125%; /* Position above the icon */
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.2s;
+    font-size: 12px;
+    font-weight: normal;
+    line-height: 1.4;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    border: 1px solid var(--border-color);
+    pointer-events: none;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.info-icon:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}
+
+/* Auto-align tooltips to avoid overflow in the 4-column settings grid */
+.setting-row:nth-child(1) .tooltip-text,
+.setting-row:nth-child(2) .tooltip-text {
+    left: 0;
+    transform: translateX(0);
+}
+
+.setting-row:nth-child(3) .tooltip-text,
+.setting-row:nth-child(4) .tooltip-text {
+    left: auto;
+    right: 0;
+    transform: translateX(0);
+}
+
 /* Tabs */
 .tabs {
     display: flex;
@@ -474,7 +546,7 @@ body {
 }
 
 #batch .settings, #gallery .settings {
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 0.7fr) minmax(0, 0.7fr);
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 0.6fr) minmax(0, 0.5fr) minmax(0, 0.7fr);
 }
 
 .custom-option.multi {
