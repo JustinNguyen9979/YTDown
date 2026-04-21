@@ -462,10 +462,16 @@ func getUserAgentForBrowser(browser string) string {
 // qualityToHeight converts quality string to pixel height
 func qualityToHeight(quality string) string {
 	heightMap := map[string]string{
+		"4320p": "4320",
+		"2880p": "2880",
+		"2160p": "2160",
+		"1440p": "1440",
 		"1080p": "1080",
 		"720p":  "720",
 		"480p":  "480",
 		"360p":  "360",
+		"240p":  "240",
+		"144p":  "144",
 	}
 	if h, ok := heightMap[quality]; ok {
 		return h

@@ -59,10 +59,16 @@ function populateSelectOptions() {
       defaultValue: 'Best Quality',
       options: [
         { value: 'Best Quality', text: 'Best Quality' },
-        { value: '1080p',        text: '1080p' },
-        { value: '720p',         text: '720p' },
-        { value: '480p',         text: '480p' },
-        { value: '360p',         text: '360p' }
+        { value: '4320p',        text: '4320p (8K)' },
+        { value: '2880p',        text: '2880p (5K)' },
+        { value: '2160p',        text: '2160p (4K)' },
+        { value: '1440p',        text: '1440p (2K)' },
+        { value: '1080p',        text: '1080p (FHD)' },
+        { value: '720p',         text: '720p (HD)' },
+        { value: '480p',         text: '480p (SD)' },
+        { value: '360p',         text: '360p' },
+        { value: '240p',         text: '240p' },
+        { value: '144p',         text: '144p' }
       ]
     },
     { id: 'batchThreadsSelect',   defaultValue: '3', options: threads },
