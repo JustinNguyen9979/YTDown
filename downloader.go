@@ -86,7 +86,7 @@ func ResolveShortURL(url string, userAgent string) string {
 }
 
 // DownloadVideo downloads a video using yt-dlp
-func DownloadVideo(ctx context.Context, index int, url, format, quality, savePath string, noPlaylist bool) error {
+func DownloadVideo(ctx context.Context, index int, url, format, quality, savePath string, noPlaylist bool, concurrentFragments int) error {
 	ytdlpPath := getResourcePath("yt-dlp")
 
 	// Force using system/brew ffmpeg and IGNORE bundled one
@@ -130,7 +130,7 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 	}
 
 	// Build yt-dlp arguments based on format and quality
-	args := buildDownloadArgs(ctx, url, format, quality, savePath, ffmpegPath, noPlaylist)
+	args := buildDownloadArgs(ctx, url, format, quality, savePath, ffmpegPath, noPlaylist, concurrentFragments)
 	args = append(args, url)
 	// Add verbose for better debugging in app.log
 	// args = append(args, "--verbose")
@@ -305,7 +305,7 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 }
 
 // buildDownloadArgs builds yt-dlp command arguments
-func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmpegPath string, noPlaylist bool) []string {
+func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmpegPath string, noPlaylist bool, concurrentFragments int) []string {
 	args := []string{}
 
 	switch format {
@@ -384,9 +384,13 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 		)
 	}
 
+	if concurrentFragments < 1 {
+		concurrentFragments = 4 // default value if invalid
+	}
+
 	// Common flags
 	args = append(args,
-		"--concurrent-fragments", "10",
+		"--concurrent-fragments", strconv.Itoa(concurrentFragments),
 		"--no-continue",
 		"--force-overwrites",
 		"--windows-filenames",

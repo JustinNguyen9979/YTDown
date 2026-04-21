@@ -9,6 +9,7 @@ const state = {
     currentQuality: 'Best Quality',
     batchThreads: 3,
     galleryThreads: 3,
+    connections: 4,
     wailsReady: false,
     selectedCompressFiles: [],
     cookieConfig: {
@@ -66,6 +67,7 @@ function populateSelectOptions() {
     },
     { id: 'batchThreadsSelect',   defaultValue: '3', options: threads },
     { id: 'galleryThreadsSelect', defaultValue: '3', options: threads },
+    { id: 'connectionsSelect', defaultValue: '4', options: threads },
     {
       id: 'compressType',
       defaultValue: 'image',
@@ -1343,6 +1345,7 @@ function setupBatchTab() {
     const cookieInline = document.getElementById('cookieInline');
     const cookieInput = document.getElementById('cookieInput');
     const confirmCookieBtn = document.getElementById('confirmCookieBtn');
+    const connectionsSelect = document.getElementById('connectionsSelect');
 
     if (!clearBtn || !startBtn || !pauseBtn || !cancelBtn) return;
 
@@ -1352,6 +1355,17 @@ function setupBatchTab() {
             const value = Number.parseInt(event.target.value, 10);
             state.batchThreads = Number.isNaN(value) ? 3 : Math.min(Math.max(value, 1), 10);
             threadsSelect.value = String(state.batchThreads);
+        });
+    }
+
+    if (connectionsSelect) connectionsSelect.disabled = isRunning;
+
+    if (connectionsSelect) {
+        connectionsSelect.value = String(state.connections);
+        connectionsSelect.addEventListener('change', (event) => {
+            const value = Number.parseInt(event.target.value, 10);
+            state.connections = Number.isNaN(value) ? 4 : Math.min(Math.max(value, 1), 10);
+            connectionsSelect.value = String(state.connections);
         });
     }
 
@@ -1439,7 +1453,8 @@ function setupBatchTab() {
                     formatSelect.value,
                     qualitySelect.value,
                     savePathInput.value,
-                    maxConcurrent
+                    maxConcurrent,
+                    state.connections
                 );
                 if (typeof result === 'string' && result.startsWith('Error:')) {
                     throw new Error(result);
@@ -1488,7 +1503,8 @@ function setupBatchTab() {
                 qualitySelect.value,
                 savePathInput.value,
                 maxConcurrent,
-                noPlaylist
+                noPlaylist,
+                state.connections
             );
             if (typeof result === 'string' && result.startsWith('Error:')) {
                 throw new Error(result);

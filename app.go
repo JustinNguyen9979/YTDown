@@ -46,17 +46,18 @@ type GalleryDownloadOptions struct {
 }
 
 type BatchDownloadState struct {
-	URLs               []string
-	Format             string
-	Quality            string
-	SavePath           string
-	MaxConcurrent      int
-	NoPlaylist         bool
-	RestrictedFailures map[int]RestrictedFailure
-	ItemStates         map[int]string
-	ActiveCancels      map[int]context.CancelFunc
-	Status             string
-	SessionID          int64
+	URLs                []string
+	Format              string
+	Quality             string
+	SavePath            string
+	MaxConcurrent       int
+	NoPlaylist          bool
+	ConcurrentFragments int
+	RestrictedFailures  map[int]RestrictedFailure
+	ItemStates          map[int]string
+	ActiveCancels       map[int]context.CancelFunc
+	Status              string
+	SessionID           int64
 }
 
 type RestrictedFailure struct {
@@ -548,7 +549,7 @@ func (a *App) GetVideoInfo(url string) *VideoInfo {
 }
 
 // StartDownload starts downloading a single video
-func (a *App) StartDownload(url, format, quality, savePath string, NoPlaylist bool) string {
+func (a *App) StartDownload(url, format, quality, savePath string, NoPlaylist bool, concurrentFragments int) string {
 	if strings.TrimSpace(url) == "" {
 		return "Error: URL is empty"
 	}
@@ -557,7 +558,7 @@ func (a *App) StartDownload(url, format, quality, savePath string, NoPlaylist bo
 
 	go func() {
 		LogDebug("Download goroutine started")
-		err := DownloadVideo(a.ctx, -1, url, format, quality, savePath, NoPlaylist)
+		err := DownloadVideo(a.ctx, -1, url, format, quality, savePath, NoPlaylist, concurrentFragments)
 		if err != nil {
 			LogError("Download error: %v", err)
 			runtime.EventsEmit(a.ctx, "download-error", err.Error())
@@ -645,6 +646,7 @@ func (a *App) runBatchSession(sessionID int64) {
 	savePath := a.currentBatch.SavePath
 	noPlaylist := a.currentBatch.NoPlaylist
 	maxConcurrent := a.currentBatch.MaxConcurrent
+	concurrentFragments := a.currentBatch.ConcurrentFragments
 	urls := append([]string(nil), a.currentBatch.URLs...)
 	a.batchMu.Unlock()
 
@@ -688,7 +690,7 @@ func (a *App) runBatchSession(sessionID int64) {
 				"status": "downloading",
 			})
 
-			err := DownloadVideo(itemCtx, index, url, format, quality, savePath, noPlaylist)
+			err := DownloadVideo(itemCtx, index, url, format, quality, savePath, noPlaylist, concurrentFragments)
 
 			a.batchMu.Lock()
 			if a.currentBatch != nil {
@@ -754,7 +756,7 @@ func (a *App) runBatchSession(sessionID int64) {
 }
 
 // StartBatchDownload starts batch downloading in parallel
-func (a *App) StartBatchDownload(urls []string, format, quality, savePath string, maxConcurrent int, NoPlaylist bool) string {
+func (a *App) StartBatchDownload(urls []string, format, quality, savePath string, maxConcurrent int, NoPlaylist bool, concurrentFragments int) string {
 	if len(urls) == 0 {
 		return "Error: No URLs provided"
 	}
@@ -774,17 +776,18 @@ func (a *App) StartBatchDownload(urls []string, format, quality, savePath string
 
 	sessionID := time.Now().UnixNano()
 	a.currentBatch = &BatchDownloadState{
-		URLs:               append([]string(nil), urls...),
-		Format:             format,
-		Quality:            quality,
-		SavePath:           savePath,
-		NoPlaylist:         NoPlaylist,
-		MaxConcurrent:      maxConcurrent,
-		RestrictedFailures: make(map[int]RestrictedFailure),
-		ItemStates:         itemStates,
-		ActiveCancels:      make(map[int]context.CancelFunc),
-		Status:             "running",
-		SessionID:          sessionID,
+		URLs:                append([]string(nil), urls...),
+		Format:              format,
+		Quality:             quality,
+		SavePath:            savePath,
+		NoPlaylist:          NoPlaylist,
+		ConcurrentFragments: concurrentFragments,
+		MaxConcurrent:       maxConcurrent,
+		RestrictedFailures:  make(map[int]RestrictedFailure),
+		ItemStates:          itemStates,
+		ActiveCancels:       make(map[int]context.CancelFunc),
+		Status:              "running",
+		SessionID:           sessionID,
 	}
 	a.batchMu.Unlock()
 
@@ -821,7 +824,7 @@ func (a *App) PauseBatchDownload() error {
 	return nil
 }
 
-func (a *App) ResumeBatchDownload(format, quality, savePath string, maxConcurrent int) string {
+func (a *App) ResumeBatchDownload(format, quality, savePath string, maxConcurrent int, concurrentFragments int) string {
 	maxConcurrent = normalizeBatchConcurrency(maxConcurrent)
 
 	a.batchMu.Lock()
@@ -834,6 +837,7 @@ func (a *App) ResumeBatchDownload(format, quality, savePath string, maxConcurren
 	a.currentBatch.Quality = quality
 	a.currentBatch.SavePath = savePath
 	a.currentBatch.MaxConcurrent = maxConcurrent
+	a.currentBatch.ConcurrentFragments = concurrentFragments
 	a.currentBatch.Status = "running"
 	a.currentBatch.SessionID = time.Now().UnixNano()
 	sessionID := a.currentBatch.SessionID
@@ -886,7 +890,7 @@ func (a *App) CancelBatchDownload() error {
 
 // RetryDownload retries downloading a failed video
 func (a *App) RetryDownload(url, format, quality, savePath string) string {
-	return a.StartDownload(url, format, quality, savePath, false)
+	return a.StartDownload(url, format, quality, savePath, false, 4)
 }
 
 func (a *App) SetManualCookie(raw string) error {
@@ -983,6 +987,7 @@ func (a *App) retryRestrictedBatchDownloads() {
 	savePath := a.currentBatch.SavePath
 	// ✅ Capture sessionID NGAY TẠI ĐÂY, trước khi Unlock
 	batchSessionID := a.currentBatch.SessionID
+	concurrentFragments := a.currentBatch.ConcurrentFragments
 	items := make([]retryItem, 0, len(a.currentBatch.RestrictedFailures))
 
 	for index, failure := range a.currentBatch.RestrictedFailures {
@@ -1005,7 +1010,7 @@ func (a *App) retryRestrictedBatchDownloads() {
 				"status": "retrying",
 			})
 
-			err := DownloadVideo(a.ctx, item.index, item.url, format, quality, savePath, a.currentBatch.NoPlaylist)
+			err := DownloadVideo(a.ctx, item.index, item.url, format, quality, savePath, a.currentBatch.NoPlaylist, concurrentFragments)
 			if err != nil {
 				failure := classifyDownloadFailure(err, true)
 				a.trackRestrictedFailure(item.index, item.url, err.Error())
