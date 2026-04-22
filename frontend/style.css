@@ -538,15 +538,99 @@ body {
     transform: scale(0.95);
 }
 
-/* Settings */
+/* Settings container chung */
 .settings {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
+    gap: 16px;
+    margin-top: 15px;
+    align-items: flex-end;
 }
 
-#batch .settings, #gallery .settings {
-    grid-template-columns: minmax(0, 0.8fr) minmax(0, 0.6fr) minmax(0, 0.5fr) minmax(0, 0.7fr);
+/* -------------------------------------------------------------------------- */
+/* TAB VIDEO (BATCH DOWNLOAD) - ÉP DROPDOWNS TRÊN 1 HÀNG, CHECKBOX HÀNG 2 */
+/* -------------------------------------------------------------------------- */
+#batch .settings {
+    display: flex;
+    flex-wrap: wrap; /* Cho phép checkbox xuống hàng */
+    grid-template-columns: none; /* Hủy bỏ grid */
+}
+
+#batch .setting-row {
+    flex: 1; /* Tự động chia đều không gian trên cùng 1 hàng */
+    min-width: 0; /* Cho phép co giãn thoải mái */
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Ép Quality Row ẩn đi mà không để lại khoảng trống */
+#batch #batchQualityRow[style*="display: none"] {
+    display: none !important;
+}
+
+/* Hàng Checkbox luôn nằm ở dưới và chiếm trọn 100% chiều ngang */
+#batch .option-row {
+    flex: 0 0 100%;
+    margin-top: 10px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* TAB GALLERY (DOWNLOAD IMAGES) */
+/* -------------------------------------------------------------------------- */
+#gallery .settings {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr); /* Chia 2 cột chính cho Threads và File Types */
+    gap: 16px;
+}
+
+/* Ép Extra Arguments chiếm toàn bộ chiều ngang */
+#gallery .setting-row[style*="grid-column: span 3"],
+#gallery .setting-row:has(#galleryArgs) {
+    grid-column: 1 / -1 !important;
+}
+
+/* Đảm bảo hàng checkbox nằm ngang */
+#gallery #galleryOptionRows {
+    grid-column: 1 / -1 !important;
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap;
+    gap: 24px !important;
+    margin-top: 10px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* TAB COMPRESS */
+/* -------------------------------------------------------------------------- */
+#compress .settings {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+#compress .settings .setting-row {
+    flex: 1;
+    min-width: 150px;
+}
+
+/* Ép thanh trượt Quality và checkbox Slower xuống hàng riêng */
+#compress #customQualityContainer,
+#compress #slowPresetContainer {
+    flex: 0 0 100% !important;
+    margin-top: 10px;
+    display: flex;
+}
+
+#compress #slowPresetContainer {
+    flex-direction: row !important;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Style cho thanh trượt để nó đẹp hơn */
+#customQualityContainer input[type="range"] {
+    width: 100%;
+    margin-top: 10px;
 }
 
 .custom-option.multi {
