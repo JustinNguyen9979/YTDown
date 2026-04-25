@@ -39,6 +39,10 @@ type Manager interface {
 	// Windows: winget upgrade or re-download .exe
 	UpgradeTool(name, binaryPath string) error
 
+	// GetLatestVersion returns the latest available version for a tool.
+	// macOS: brew info, Linux/Windows: GitHub API
+	GetLatestVersion(name string) string
+
 	// LaunchSetup opens a terminal window that installs all dependencies.
 	// macOS: osascript → Terminal.app
 	// Linux: xterm / gnome-terminal

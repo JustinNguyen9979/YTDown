@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
@@ -93,6 +92,38 @@ func NewAppWithManager(pm platform.Manager) *App {
 	}
 }
 
+func getBrewLatestVersion(name string) string {
+	brewPath := ""
+	for _, p := range []string{"/opt/homebrew/bin/brew", "/usr/local/bin/brew"} {
+		if _, err := os.Stat(p); err == nil {
+			brewPath = p
+			break
+		}
+	}
+	if brewPath == "" {
+		return ""
+	}
+
+	cmd := exec.Command(brewPath, "info", "--json=v1", name)
+	cmd.Env = append(os.Environ(),
+		"PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	var result []struct {
+		Versions struct {
+			Stable string `json:"stable"`
+		} `json:"versions"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil || len(result) == 0 {
+		return ""
+	}
+	return result[0].Versions.Stable
+}
+
 // GetVersionStatus returns version info for yt-dlp, ffmpeg and gallery-dl
 func (a *App) GetVersionStatus() []BinaryVersion {
 	var versions []BinaryVersion
@@ -101,22 +132,14 @@ func (a *App) GetVersionStatus() []BinaryVersion {
 	ytdlpPath := getResourcePath("yt-dlp")
 	if ytdlpPath != "" {
 		current := ""
-		cmd := exec.Command(ytdlpPath, "--version")
-		if out, err := cmd.Output(); err == nil {
+		if out, err := exec.Command(ytdlpPath, "--version").Output(); err == nil {
 			current = strings.TrimSpace(string(out))
 		}
 
+		// ✅ Dùng platform manager — mỗi OS tự xử lý (brew/GitHub API/pip)
 		latest := current
-		// Fetch latest from GitHub
-		client := &http.Client{Timeout: 5 * time.Second}
-		if resp, err := client.Get("https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"); err == nil {
-			defer resp.Body.Close()
-			var data struct {
-				TagName string `json:"tag_name"`
-			}
-			if err := json.NewDecoder(resp.Body).Decode(&data); err == nil {
-				latest = data.TagName
-			}
+		if v := a.pm.GetLatestVersion("yt-dlp"); v != "" {
+			latest = v
 		}
 
 		versions = append(versions, BinaryVersion{
@@ -132,28 +155,17 @@ func (a *App) GetVersionStatus() []BinaryVersion {
 	gallerydlPath := getResourcePath("gallery-dl")
 	if gallerydlPath != "" {
 		current := ""
-		cmd := exec.Command(gallerydlPath, "--version")
-		if out, err := cmd.Output(); err == nil {
+		if out, err := exec.Command(gallerydlPath, "--version").Output(); err == nil {
 			current = strings.TrimSpace(string(out))
-			// Handle "gallery-dl 1.28.1" format
 			if parts := strings.Fields(current); len(parts) >= 2 {
 				current = parts[1]
 			}
 		}
 
+		// ✅ Dùng platform manager — không hardcode brew
 		latest := current
-		// Fetch latest from GitHub
-		client := &http.Client{Timeout: 5 * time.Second}
-		if resp, err := client.Get("https://api.github.com/repos/mikf/gallery-dl/releases/latest"); err == nil {
-			defer resp.Body.Close()
-			var data struct {
-				TagName string `json:"tag_name"`
-			}
-			if err := json.NewDecoder(resp.Body).Decode(&data); err == nil {
-				latest = data.TagName
-				// Normalize tag name (e.g., "v1.28.1" to "1.28.1")
-				latest = strings.TrimPrefix(latest, "v")
-			}
+		if v := a.pm.GetLatestVersion("gallery-dl"); v != "" {
+			latest = v
 		}
 
 		versions = append(versions, BinaryVersion{
@@ -165,15 +177,13 @@ func (a *App) GetVersionStatus() []BinaryVersion {
 		})
 	}
 
-	// Check ffmpeg
+	// Check ffmpeg (giữ nguyên)
 	ffmpegPath := getResourcePath("ffmpeg")
 	if ffmpegPath != "" {
 		current := ""
-		cmd := exec.Command(ffmpegPath, "-version")
-		if out, err := cmd.Output(); err == nil {
+		if out, err := exec.Command(ffmpegPath, "-version").Output(); err == nil {
 			lines := strings.Split(string(out), "\n")
 			if len(lines) > 0 {
-				// Parse "ffmpeg version 6.0 Copyright..."
 				parts := strings.Fields(lines[0])
 				if len(parts) >= 3 && parts[0] == "ffmpeg" && parts[1] == "version" {
 					current = parts[2]
@@ -182,11 +192,10 @@ func (a *App) GetVersionStatus() []BinaryVersion {
 				}
 			}
 		}
-
 		versions = append(versions, BinaryVersion{
 			Name:       "ffmpeg",
 			Current:    current,
-			Latest:     current, // ffmpeg doesn't have a simple latest check here
+			Latest:     current,
 			CanUpgrade: false,
 		})
 	}

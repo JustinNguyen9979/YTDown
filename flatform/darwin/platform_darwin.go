@@ -1,6 +1,7 @@
 package darwin
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -93,6 +94,30 @@ func (m *Manager) InstallInstructions(tools []string) string {
 func (m *Manager) PackageManagerName() string { return "Homebrew" }
 
 func (m *Manager) PackageManagerAvailable() bool { return m.brewPath() != "" }
+
+func (m *Manager) GetLatestVersion(name string) string {
+	bp := m.brewPath()
+	if bp == "" {
+		return ""
+	}
+	cmd := exec.Command(bp, "info", "--json=v1", name)
+	cmd.Env = append(os.Environ(),
+		"PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	var result []struct {
+		Versions struct {
+			Stable string `json:"stable"`
+		} `json:"versions"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil || len(result) == 0 {
+		return ""
+	}
+	return result[0].Versions.Stable
+}
 
 func (m *Manager) UpgradeTool(name, binaryPath string) error {
 	brewPath := "/opt/homebrew/bin/brew"

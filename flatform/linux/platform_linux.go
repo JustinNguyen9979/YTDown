@@ -1,11 +1,14 @@
 package linux
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type Manager struct {
@@ -202,4 +205,28 @@ chmod +x "$NEW"; cp "$NEW" "$TARGET"
 	scriptPath := filepath.Join(tmpDir, "update.sh")
 	os.WriteFile(scriptPath, []byte(script), 0755)
 	return exec.Command("sh", scriptPath).Start()
+}
+
+func (m *Manager) GetLatestVersion(name string) string {
+	repos := map[string]string{
+		"yt-dlp":     "yt-dlp/yt-dlp",
+		"gallery-dl": "mikf/gallery-dl",
+	}
+	repo, ok := repos[name]
+	if !ok {
+		return ""
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get("https://api.github.com/repos/" + repo + "/releases/latest")
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	var data struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return ""
+	}
+	return strings.TrimPrefix(data.TagName, "v")
 }
