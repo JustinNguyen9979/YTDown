@@ -1,9 +1,13 @@
-name: Build & Release (3 OS)
+name: Build & Release (Multi-Platform)
 
 on:
   push:
+    branches:
+      - main
     tags:
+      - "v*"
       - "20*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -17,27 +21,34 @@ jobs:
           - os: macos-latest
             platform: darwin
             build_script: bash build.sh
-            artifact: YTDown-macOS.dmg
+            # Lưu ý: artifact này sẽ được script build.sh đặt tên cụ thể, 
+            # chúng ta sẽ dùng wildcard để upload cho chắc chắn.
+            artifact_pattern: dist/*.dmg 
+            name: macOS
 
           - os: windows-latest
             platform: windows
             build_script: bash build-windows.sh
-            artifact: YTDown-Windows-Setup.exe
+            artifact_pattern: dist/*.exe
+            name: Windows
 
           - os: ubuntu-22.04
             platform: linux
             build_script: bash build-linux.sh
-            artifact: YTDown-Linux.AppImage
+            artifact_pattern: dist/*.AppImage
+            name: Linux
 
     runs-on: ${{ matrix.os }}
-    name: Build (${{ matrix.platform }})
+    name: Build (${{ matrix.name }})
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version-file: go.mod
 
       - uses: actions/setup-node@v4
         with:
@@ -54,36 +65,80 @@ jobs:
         if: matrix.platform == 'darwin'
         run: brew install create-dmg
 
-      - name: Install NSIS (Windows)
-        if: matrix.platform == 'windows'
-        uses: juancarlospaco/nsis-action@main
-
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
       - run: go mod download
 
       - name: Build
+        id: build
         run: ${{ matrix.build_script }}
         env:
           VERSION: ${{ github.ref_name }}
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}
+          name: ytdown-${{ matrix.platform }}
+          path: ${{ matrix.artifact_pattern }}
 
   release:
     needs: build
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: dist/
+          path: artifacts
 
-      - uses: softprops/action-gh-release@v2
+      - name: Flatten artifacts
+        run: |
+          mkdir -p dist
+          find artifacts -type f -exec cp {} dist/ \;
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
         with:
-          files: dist/**/*
+          files: dist/*
           generate_release_notes: true
+          tag_name: ${{ github.ref_name }}
+          # Nếu là push lên main mà không có tag, ta dùng tag tạm hoặc update release 'latest'
+          name: "YTDown ${{ github.ref_name }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-homebrew:
+    needs: release
+    runs-on: macos-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ytdown-darwin
+          path: dist
+
+      - name: Update Homebrew Tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          # Tìm file dmg và lấy thông tin
+          DMG_FILE=$(ls dist/*.dmg | head -n 1)
+          SHA256=$(shasum -a 256 "$DMG_FILE" | awk '{print $1}')
+          
+          # Lấy version từ tên file hoặc git tag
+          VERSION=${{ github.ref_name }}
+          
+          git clone https://x-access-token:${GH_TOKEN}@github.com/JustinNguyen9979/homebrew-ytdown.git
+          cd homebrew-ytdown
+          
+          sed -i '' "s/version \".*\"/version \"$VERSION\"/" Casks/ytdown.rb
+          sed -i '' "s/sha256 \".*\"/sha256 \"$SHA256\"/" Casks/ytdown.rb
+          
+          git config user.email "JustinNguyen9979@github.com"
+          git config user.name "GitHub Action"
+          git add Casks/ytdown.rb
+          git commit -m "Update ytdown to $VERSION"
+          git push
