@@ -95,26 +95,22 @@ func (m *Manager) PackageManagerName() string { return "Homebrew" }
 func (m *Manager) PackageManagerAvailable() bool { return m.brewPath() != "" }
 
 func (m *Manager) UpgradeTool(name, binaryPath string) error {
-	// Try self-update first
-	var selfCmd *exec.Cmd
-	switch name {
-	case "yt-dlp":
-		selfCmd = exec.Command(binaryPath, "-U")
-	case "gallery-dl":
-		selfCmd = exec.Command(binaryPath, "--update")
+	brewPath := "/opt/homebrew/bin/brew"
+	if _, err := os.Stat(brewPath); os.IsNotExist(err) {
+		brewPath = "/usr/local/bin/brew" // Intel Mac fallback
 	}
-	if selfCmd != nil {
-		if out, err := selfCmd.CombinedOutput(); err == nil {
-			_ = out
-			return nil
-		}
+
+	// ✅ FIX 2: Inject full PATH để brew chạy được khi mở từ Finder
+	cmd := exec.Command(brewPath, "upgrade", name)
+	cmd.Env = append(os.Environ(),
+		"PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("brew upgrade %s failed: %s", name, string(output))
 	}
-	// Fallback: brew upgrade
-	bp := m.brewPath()
-	if bp == "" {
-		return fmt.Errorf("Homebrew not found")
-	}
-	return exec.Command(bp, "upgrade", name).Run()
+	return nil
 }
 
 func (m *Manager) LaunchSetup() error {

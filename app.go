@@ -210,16 +210,36 @@ func (a *App) GetAppInfo() AppInfo {
 	}
 }
 
-// UpgradeBinary attempts to upgrade a binary
+// UpgradeBinary attempts to upgrade the specified binary (yt-dlp or gallery-dl)
 func (a *App) UpgradeBinary(name string) error {
-	binaryPath := a.pm.GetBinaryPath(name)
+	// ✅ FIX 1: Dùng cùng hàm getResourcePath như GetVersionStatus
+	// để đảm bảo tìm đúng path binary
+	binaryPath := getResourcePath(name)
 	if binaryPath == "" {
-		return fmt.Errorf("%s not found", name)
+		// Fallback sang pm.GetBinaryPath
+		binaryPath = a.pm.GetBinaryPath(name)
 	}
-	runtime.EventsEmit(a.ctx, "upgrade-status", fmt.Sprintf("Upgrading %s...", name))
-	if err := a.pm.UpgradeTool(name, binaryPath); err != nil {
+	if binaryPath == "" {
+		err := fmt.Errorf("%s not found in PATH or Homebrew directories", name)
+		// ✅ FIX: Emit lỗi ra UI thay vì âm thầm return
+		runtime.EventsEmit(a.ctx, "upgrade-error", map[string]interface{}{
+			"name":  name,
+			"error": err.Error(),
+		})
 		return err
 	}
+
+	runtime.EventsEmit(a.ctx, "upgrade-status", fmt.Sprintf("Upgrading %s...", name))
+
+	if err := a.pm.UpgradeTool(name, binaryPath); err != nil {
+		// ✅ FIX: Emit lỗi chi tiết ra UI
+		runtime.EventsEmit(a.ctx, "upgrade-error", map[string]interface{}{
+			"name":  name,
+			"error": err.Error(),
+		})
+		return err
+	}
+
 	runtime.EventsEmit(a.ctx, "upgrade-status", fmt.Sprintf("%s upgraded successfully.", name))
 	return nil
 }
