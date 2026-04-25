@@ -28,6 +28,8 @@ export function GetCookieConfig():Promise<main.CookieConfig>;
 
 export function GetDefaultSavePath():Promise<string>;
 
+export function GetPackageManagerStatus():Promise<Record<string, any>>;
+
 export function GetVersionStatus():Promise<Array<main.BinaryVersion>>;
 
 export function GetVideoInfo(arg1:string):Promise<main.VideoInfo>;

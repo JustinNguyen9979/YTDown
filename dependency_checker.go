@@ -27,60 +27,51 @@ var requiredDependencies = []string{"ffmpeg", "yt-dlp", "gallery-dl"}
 
 // CheckDependencies checks if all required tools are installed
 func (a *App) CheckDependencies() DependencyCheckResult {
+	missing, _ := a.pm.CheckDependencies()
 	result := DependencyCheckResult{
-		AllInstalled: true,
-		Dependencies: []DependencyStatus{},
-		MissingTools: []string{},
+		AllInstalled: len(missing) == 0,
+		MissingTools: missing,
 	}
-
-	for _, tool := range requiredDependencies {
-		status := checkTool(tool)
-		result.Dependencies = append(result.Dependencies, status)
-
-		if !status.Installed {
-			result.AllInstalled = false
-			result.MissingTools = append(result.MissingTools, tool)
+	for _, tool := range []string{"ffmpeg", "yt-dlp", "gallery-dl"} {
+		path := a.pm.GetBinaryPath(tool)
+		status := DependencyStatus{Name: tool, Installed: path != ""}
+		if path != "" {
+			status.Version = getToolVersion(tool, path)
+		} else {
+			status.Error = "not found"
 		}
+		result.Dependencies = append(result.Dependencies, status)
 	}
-
 	if !result.AllInstalled {
 		result.ErrorMessage = fmt.Sprintf(
-			"Missing dependencies: %s\nPlease install them to use YTDown.",
-			strings.Join(result.MissingTools, ", "),
+			"Missing: %s", strings.Join(missing, ", "),
 		)
 	}
-
 	return result
 }
 
-// InstallDependencies installs missing dependencies via Homebrew
+// InstallDependencies installs missing dependencies and returns success status and error message if any
 func (a *App) InstallDependencies(tools []string) (bool, string) {
-	// Tìm đường dẫn brew thực tế
-	brewPath := ""
-	if p, err := exec.LookPath("brew"); err == nil {
-		brewPath = p
-	} else {
-		for _, p := range []string{"/opt/homebrew/bin/brew", "/usr/local/bin/brew"} {
-			if _, err := os.Stat(p); err == nil {
-				brewPath = p
-				break
-			}
-		}
-	}
-	if brewPath == "" {
-		return false, "Homebrew is not installed. Please install: https://brew.sh"
-	}
-
 	for _, tool := range tools {
-		if status := checkTool(tool); status.Installed {
-			continue
-		}
-		cmd := exec.Command(brewPath, "install", tool) // ← dùng path tuyệt đối
-		if err := cmd.Run(); err != nil {
+		if err := a.pm.InstallDependency(tool); err != nil {
 			return false, fmt.Sprintf("Failed to install %s: %v", tool, err)
 		}
 	}
 	return true, ""
+}
+
+// GetBrewInstallStatus kept for frontend compatibility
+func (a *App) GetBrewInstallStatus() map[string]interface{} {
+	return a.GetPackageManagerStatus()
+}
+
+// GetPackageManagerStatus replaces the old macOS-only GetBrewInstallStatus
+func (a *App) GetPackageManagerStatus() map[string]interface{} {
+	return map[string]interface{}{
+		"name":      a.pm.PackageManagerName(),
+		"available": a.pm.PackageManagerAvailable(),
+		"os":        a.pm.OSName(),
+	}
 }
 
 // checkTool checks if a tool is installed and returns its version
@@ -183,61 +174,18 @@ func isBrewInstalled() bool {
 	return false
 }
 
-// GetBrewInstallStatus returns information about Homebrew installation
-func (a *App) GetBrewInstallStatus() map[string]interface{} {
-	installed := isBrewInstalled()
-	var path string
-	var version string
-
-	if installed {
-		// Tìm path thực của brew (giống logic isBrewInstalled)
-		if p, err := exec.LookPath("brew"); err == nil {
-			path = p
-		} else {
-			for _, p := range []string{"/opt/homebrew/bin/brew", "/usr/local/bin/brew"} {
-				if _, err := os.Stat(p); err == nil {
-					path = p
-					break
-				}
-			}
-		}
-		if path != "" {
-			cmd := exec.Command(path, "--version") // ← Dùng path tuyệt đối
-			if out, err := cmd.Output(); err == nil {
-				version = strings.TrimSpace(string(out))
-			}
-		}
-	}
-
-	return map[string]interface{}{
-		"installed": installed,
-		"path":      path,
-		"version":   version,
-		"setupUrl":  "https://brew.sh",
-	}
-}
-
-// PromptToInstallDependencies shows a dialog and installs if user agrees
 func (a *App) PromptToInstallDependencies() (bool, string) {
-	// Check what's missing
 	check := a.CheckDependencies()
-
 	if check.AllInstalled {
 		return true, ""
 	}
-
-	// Show dialog to user
 	confirmed, _ := runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
 		Type:    runtime.QuestionDialog,
 		Title:   "Install Dependencies",
-		Message: fmt.Sprintf("YTDown requires the following tools:\n\n%s\n\nWould you like to install them now via Homebrew?", strings.Join(check.MissingTools, "\n")),
+		Message: a.pm.InstallInstructions(check.MissingTools),
 	})
-
 	if confirmed != "Yes" {
-		return false, "User declined to install dependencies"
+		return false, "User declined"
 	}
-
-	// Install
-	success, errMsg := a.InstallDependencies(check.MissingTools)
-	return success, errMsg
+	return a.InstallDependencies(check.MissingTools)
 }

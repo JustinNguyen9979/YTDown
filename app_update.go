@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -44,66 +43,47 @@ type githubRelease struct {
 }
 
 func (a *App) GetAppUpdateInfo() AppUpdateInfo {
-	info := AppUpdateInfo{
-		Current:    Version,
-		ReleaseURL: appReleasePageURL,
-	}
-
+	info := AppUpdateInfo{Current: Version, ReleaseURL: appReleasePageURL}
 	release, err := fetchLatestAppRelease()
 	if err != nil {
 		return info
 	}
-
 	latest := normalizeReleaseVersion(release.TagName)
 	info.Latest = latest
 	info.ReleaseURL = chooseNonEmpty(release.HTMLURL, appReleasePageURL)
 	info.ReleaseNotes = strings.TrimSpace(release.Body)
 
-	if asset := chooseDMGAsset(release.Assets); asset != nil {
-		info.AssetName = asset.Name
-		info.DownloadURL = asset.BrowserDownloadURL
+	// Use platform suffix to find the right asset
+	suffix := a.pm.UpdateAssetSuffix()
+	for i := range release.Assets {
+		if strings.HasSuffix(strings.ToLower(release.Assets[i].Name), suffix) {
+			info.AssetName = release.Assets[i].Name
+			info.DownloadURL = release.Assets[i].BrowserDownloadURL
+			break
+		}
 	}
-
 	if info.Current != "" && latest != "" && compareDateVersions(latest, info.Current) > 0 {
 		info.Available = true
 	}
-
 	return info
 }
 
 func (a *App) InstallAppUpdate() error {
 	info := a.GetAppUpdateInfo()
 	if !info.Available {
-		return fmt.Errorf("no newer app update available")
+		return fmt.Errorf("no newer update available")
 	}
 	if info.DownloadURL == "" {
-		return fmt.Errorf("latest release has no DMG asset")
+		return fmt.Errorf("no release asset found for %s", a.pm.OSName())
 	}
-
-	targetApp, err := preferredInstallPath()
-	if err != nil {
-		targetApp = filepath.Join("/Applications", appName+".app")
-	}
-
-	scriptPath, err := writeAppUpdaterScript(info.DownloadURL, targetApp)
-	if err != nil {
+	if err := a.pm.InstallAppUpdate(info.DownloadURL, os.Getpid()); err != nil {
 		return err
 	}
-
-	cmd := exec.Command("sh", scriptPath)
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start updater: %w", err)
-	}
-
-	runtime.EventsEmit(a.ctx, "app-update-started", map[string]interface{}{
-		"version": info.Latest,
-	})
-
+	runtime.EventsEmit(a.ctx, "app-update-started", map[string]interface{}{"version": info.Latest})
 	go func() {
 		time.Sleep(300 * time.Millisecond)
 		runtime.Quit(a.ctx)
 	}()
-
 	return nil
 }
 

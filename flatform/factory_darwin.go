@@ -1,7 +1,8 @@
+// flatform/factory_darwin.go
 //go:build darwin
 
 package platform
 
-import "github.com/JustinNguyen9979/YTDown/platform/darwin"
+import "ytdown/flatform/darwin"
 
 func newOSManager() Manager { return darwin.New() }

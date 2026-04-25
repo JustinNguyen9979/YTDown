@@ -1,7 +1,8 @@
+// flatform/factory_windows.go
 //go:build windows
 
 package platform
 
-import "github.com/JustinNguyen9979/YTDown/platform/windows"
+import "ytdown/flatform/windows"
 
 func newOSManager() Manager { return windows.New() }
