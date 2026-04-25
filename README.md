@@ -149,7 +149,7 @@ YTDown/
 ├── build.sh        # Script đóng gói macOS (.dmg)
 ├── build-windows.sh # Script đóng gói Windows (.exe)
 ├── build-linux.sh   # Script đóng gói Linux (.AppImage)
-└── README.md       # Tài liệu hướng dẫn
+   └── README.md       # Tài liệu hướng dẫn
 ├── dependency_checker.go  # Tự động kiểm tra & cài dependencies
 ├── app_update.go          # Tự động kiểm tra cập nhật phiên bản
 ```
