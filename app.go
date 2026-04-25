@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	platform "ytdown/flatform"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -19,6 +20,7 @@ import (
 // App struct
 type App struct {
 	ctx            context.Context
+	pm             platform.Manager
 	config         *Config
 	batchMu        sync.Mutex
 	currentBatch   *BatchDownloadState
@@ -81,7 +83,9 @@ type Config struct {
 
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{}
+	return &App{
+		pm: platform.NewManager(),
+	}
 }
 
 // GetVersionStatus returns version info for yt-dlp, ffmpeg and gallery-dl
