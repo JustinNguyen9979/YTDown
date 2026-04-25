@@ -163,7 +163,7 @@ Dự án được phát hành dưới bản quyền **MIT**.
 Nếu YTDown giúp ích cho công việc của bạn, hãy mời mình một ly cà phê nhé:
 
 - **Ngân hàng:** MB Bank
-- **Số tài khoản:** `0798888888888`
+- **Số tài khoản:** `079 88888 88888`
 - **Chủ tài khoản:** `Nguyen Duc Huy`
 
 ### 🌍 International supporters
