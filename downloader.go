@@ -88,25 +88,7 @@ func ResolveShortURL(url string, userAgent string) string {
 // DownloadVideo downloads a video using yt-dlp
 func DownloadVideo(ctx context.Context, index int, url, format, quality, savePath string, noPlaylist bool, concurrentFragments int) error {
 	ytdlpPath := getResourcePath("yt-dlp")
-
-	// Force using system/brew ffmpeg and IGNORE bundled one
-	ffmpegPath := ""
-	for _, p := range []string{
-		"/opt/homebrew/bin/ffmpeg",
-		"/usr/local/bin/ffmpeg",
-		"/usr/bin/ffmpeg",
-	} {
-		if info, err := os.Stat(p); err == nil && !info.IsDir() {
-			ffmpegPath = p
-			break
-		}
-	}
-	// Fallback to searching in PATH if not found in common brew/system locations
-	if ffmpegPath == "" {
-		if path, err := exec.LookPath("ffmpeg"); err == nil {
-			ffmpegPath = path
-		}
-	}
+	ffmpegPath := getResourcePath("ffmpeg")
 
 	if ytdlpPath == "" {
 		return fmt.Errorf("yt-dlp not found. Please install it or use the Setup Dependencies button.")
@@ -711,9 +693,13 @@ func GetPlaylistVideos(ctx context.Context, url string) ([]string, error) {
 	return videos, nil
 }
 
-// getResourcePath finds binary in system paths (brew) ONLY
+// getResourcePath finds binary using the global platform manager
 func getResourcePath(name string) string {
-	// 1. Try common system paths (Homebrew, etc.)
+	if platformManager != nil {
+		return platformManager.GetBinaryPath(name)
+	}
+
+	// Fallback for tests or contexts where platformManager is not initialized
 	for _, p := range []string{
 		"/opt/homebrew/bin/" + name,
 		"/usr/local/bin/" + name,
@@ -724,7 +710,6 @@ func getResourcePath(name string) string {
 		}
 	}
 
-	// 2. Last resort: try system PATH
 	if path, err := exec.LookPath(name); err == nil {
 		return path
 	}

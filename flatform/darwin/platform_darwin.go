@@ -16,8 +16,11 @@ func New() *Manager { return &Manager{} }
 // ---------- PATH injection ----------
 
 func (m *Manager) InjectBinDir() {
-	// Ensure Homebrew bin is always in PATH when app is opened from Finder
-	for _, d := range []string{"/opt/homebrew/bin", "/usr/local/bin"} {
+	// Ensure Homebrew bin is always in PATH when app is opened from Finder.
+	// We want /opt/homebrew/bin to be FIRST for Apple Silicon users.
+	// Prepending in this order: /usr/local/bin then /opt/homebrew/bin
+	// results in /opt/homebrew/bin being at the very front.
+	for _, d := range []string{"/usr/local/bin", "/opt/homebrew/bin"} {
 		current := os.Getenv("PATH")
 		if !strings.Contains(current, d) {
 			os.Setenv("PATH", d+":"+current)
@@ -40,14 +43,17 @@ func (m *Manager) brewPath() string {
 // ---------- Tool paths ----------
 
 func (m *Manager) GetBinaryPath(tool string) string {
-	if p, err := exec.LookPath(tool); err == nil {
-		return p
-	}
+	// 1. Try explicit system paths in preferred order
 	for _, dir := range []string{"/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"} {
 		p := filepath.Join(dir, tool)
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}
+	}
+
+	// 2. Fallback to system PATH
+	if p, err := exec.LookPath(tool); err == nil {
+		return p
 	}
 	return ""
 }

@@ -83,8 +83,13 @@ type Config struct {
 
 // NewApp creates a new App application struct
 func NewApp() *App {
+	return NewAppWithManager(platform.NewManager())
+}
+
+// NewAppWithManager creates a new App with an existing manager
+func NewAppWithManager(pm platform.Manager) *App {
 	return &App{
-		pm: platform.NewManager(),
+		pm: pm,
 	}
 }
 

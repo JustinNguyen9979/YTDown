@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"ytdown/flatform"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -15,13 +16,17 @@ var assets embed.FS
 // Version is set during build using -ldflags
 var Version = "Dev"
 
+// Global platform manager for consistent path resolution
+var platformManager platform.Manager
+
 func main() {
 	if err := InitLogger(); err != nil {
 		panic(err)
 	}
 	defer CloseLogger()
 
-	app := NewApp()
+	platformManager = platform.NewManager()
+	app := NewAppWithManager(platformManager)
 
 	err := wails.Run(&options.App{
 		Title:      "YTDown",
