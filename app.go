@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	platform "ytdown/flatform"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -19,6 +20,7 @@ import (
 // App struct
 type App struct {
 	ctx            context.Context
+	pm             platform.Manager
 	config         *Config
 	batchMu        sync.Mutex
 	currentBatch   *BatchDownloadState
@@ -81,7 +83,9 @@ type Config struct {
 
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{}
+	return &App{
+		pm: platform.NewManager(),
+	}
 }
 
 // GetVersionStatus returns version info for yt-dlp, ffmpeg and gallery-dl
@@ -203,143 +207,27 @@ func (a *App) GetAppInfo() AppInfo {
 
 // UpgradeBinary attempts to upgrade a binary
 func (a *App) UpgradeBinary(name string) error {
-	if name != "yt-dlp" && name != "gallery-dl" {
-		return fmt.Errorf("upgrade not supported for %s", name)
-	}
-
-	binaryPath := getResourcePath(name)
+	binaryPath := a.pm.GetBinaryPath(name)
 	if binaryPath == "" {
 		return fmt.Errorf("%s not found", name)
 	}
-
-	runtime.EventsEmit(a.ctx, "upgrade-status", fmt.Sprintf("Upgrading %s via self-update...", name))
-
-	// Try self-update first
-	var cmd *exec.Cmd
-	if name == "yt-dlp" {
-		cmd = exec.Command(binaryPath, "-U")
-	} else {
-		cmd = exec.Command(binaryPath, "--update")
-	}
-
-	if output, err := cmd.CombinedOutput(); err == nil {
-		runtime.EventsEmit(a.ctx, "upgrade-status", fmt.Sprintf("%s upgraded successfully.", name))
-		return nil
-	} else {
-		fmt.Printf("%s update failed: %v\nOutput: %s\n", name, err, string(output))
-	}
-
-	// Fallback to brew
-	brewPath, _ := exec.LookPath("brew")
-	if brewPath == "" {
-		// Try common paths as fallback
-		for _, p := range []string{"/opt/homebrew/bin/brew", "/usr/local/bin/brew"} {
-			if _, err := os.Stat(p); err == nil {
-				brewPath = p
-				break
-			}
-		}
-	}
-
-	if brewPath != "" {
-		runtime.EventsEmit(a.ctx, "upgrade-status", "Self-update failed. Trying Homebrew...")
-		cmd = exec.Command(brewPath, "upgrade", name)
-		if output, err := cmd.CombinedOutput(); err == nil {
-			runtime.EventsEmit(a.ctx, "upgrade-status", fmt.Sprintf("%s upgraded via Homebrew.", name))
-			return nil
-		} else {
-			return fmt.Errorf("failed to upgrade %s: %s", name, string(output))
-		}
-	}
-
-	return fmt.Errorf("failed to upgrade %s and Homebrew not found", name)
-}
-
-// LaunchSetupTerminal creates and runs a setup script in a new Terminal window
-func (a *App) LaunchSetupTerminal() error {
-	usr, _ := user.Current()
-	setupScriptPath := filepath.Join(usr.HomeDir, ".config", "ytdown", "setup_env.sh")
-	os.MkdirAll(filepath.Dir(setupScriptPath), 0755)
-
-	scriptContent := `#!/bin/bash
-set -e
-echo "=========================================="
-echo "   YTDown Environment Setup"
-echo "=========================================="
-
-# Check Homebrew
-if ! command -v brew &> /dev/null && [ ! -f "/opt/homebrew/bin/brew" ] && [ ! -f "/usr/local/bin/brew" ]; then
-    echo "📦 Homebrew not found. Installing..."
-    echo "👉 NOTE: Please enter your Mac password when prompted."
-    echo "   (Characters will NOT show while you type, just type it and press Enter)"
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-fi
-
-# Setup Homebrew PATH for current session
-if [ -f "/opt/homebrew/bin/brew" ]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-    BREW_PATH="/opt/homebrew/bin/brew"
-elif [ -f "/usr/local/bin/brew" ]; then
-    eval "$(/usr/local/bin/brew shellenv)"
-    BREW_PATH="/usr/local/bin/brew"
-else
-    echo "❌ Error: Homebrew installation failed or not found."
-    exit 1
-fi
-
-# Function to setup shell profile
-setup_shell() {
-    local profile=$1
-    local cmd=$2
-    if [ -f "$profile" ] || [ "$profile" == "$HOME/.zprofile" ]; then
-        if ! grep -qs "homebrew shellenv" "$profile"; then
-            echo "" >> "$profile"
-            echo "$cmd" >> "$profile"
-            echo "✅ Added Homebrew to $profile"
-        fi
-    fi
-}
-
-if [[ $(uname -m) == "arm64" ]]; then
-    LINE='eval "$(/opt/homebrew/bin/brew shellenv)"'
-else
-    LINE='eval "$(/usr/local/bin/brew shellenv)"'
-fi
-
-setup_shell "$HOME/.zprofile" "$LINE"
-setup_shell "$HOME/.zshrc" "$LINE"
-setup_shell "$HOME/.bash_profile" "$LINE"
-
-echo "📦 Installing/Updating dependencies..."
-$BREW_PATH update
-$BREW_PATH install yt-dlp ffmpeg gallery-dl || $BREW_PATH upgrade yt-dlp ffmpeg gallery-dl
-
-echo ""
-echo "✅ SETUP COMPLETE!"
-echo "------------------------------------------"
-echo "1. yt-dlp, ffmpeg, and gallery-dl are now installed."
-echo "2. Homebrew PATH has been added to your shell profiles."
-echo ""
-echo "👉 THIS WINDOW WILL CLOSE IN 5 SECONDS."
-echo "------------------------------------------"
-sleep 5
-exit
-`
-
-	err := os.WriteFile(setupScriptPath, []byte(scriptContent), 0755)
-	if err != nil {
+	runtime.EventsEmit(a.ctx, "upgrade-status", fmt.Sprintf("Upgrading %s...", name))
+	if err := a.pm.UpgradeTool(name, binaryPath); err != nil {
 		return err
 	}
+	runtime.EventsEmit(a.ctx, "upgrade-status", fmt.Sprintf("%s upgraded successfully.", name))
+	return nil
+}
 
-	// Use osascript to open Terminal, run the script, and then close the window
-	appleScript := fmt.Sprintf("tell application \"Terminal\" to do script \"/bin/bash %s; exit\"", setupScriptPath)
-	cmd := exec.Command("osascript", "-e", appleScript)
-	return cmd.Run()
+// LaunchSetupTerminal: delegate sang platform
+func (a *App) LaunchSetupTerminal() error {
+	return a.pm.LaunchSetup()
 }
 
 // startup is called at application startup
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.pm.InjectBinDir()
 	InitLogger()
 	a.loadConfig()
 	manager.LoadConfig()
@@ -517,26 +405,20 @@ func (a *App) OpenFolderDialog() string {
 	return dir
 }
 
-// OpenSaveFolder opens the specified folder path in Finder/File Explorer
+// OpenSaveFolder: dùng a.pm.OpenFolder thay vì hardcode "open"
 func (a *App) OpenSaveFolder(savePath string) {
 	if savePath == "" {
 		savePath = a.config.SavePath
 	}
-	if savePath == "" {
-		return
+	if savePath != "" {
+		a.pm.OpenFolder(savePath)
 	}
-
-	// On macOS, 'open' handles directories correctly.
-	exec.Command("open", savePath).Run()
 }
 
-// OpenFile opens the specified file path in the system's default application
 func (a *App) OpenFile(filePath string) {
-	if filePath == "" {
-		return
+	if filePath != "" {
+		a.pm.OpenFile(filePath)
 	}
-	// On macOS, 'open' handles files correctly.
-	exec.Command("open", filePath).Run()
 }
 
 // GetVideoInfo fetches video metadata using yt-dlp

@@ -54,6 +54,10 @@ export function GetDefaultSavePath() {
   return window['go']['main']['App']['GetDefaultSavePath']();
 }
 
+export function GetPackageManagerStatus() {
+  return window['go']['main']['App']['GetPackageManagerStatus']();
+}
+
 export function GetVersionStatus() {
   return window['go']['main']['App']['GetVersionStatus']();
 }

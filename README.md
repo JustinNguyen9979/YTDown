@@ -1,37 +1,35 @@
-# 🎬 YTDown - Trình tải Video & Chuyển đổi Media cho macOS
+# 🎬 YTDown - Trình tải Video & Chuyển đổi Media Đa nền tảng
 
-YTDown là ứng dụng Desktop mạnh mẽ, đơn giản dành cho macOS, giúp bạn tải video chất lượng cao và trích xuất âm thanh từ YouTube, Facebook, TikTok và hàng trăm nền tảng khác.
+YTDown là ứng dụng Desktop mạnh mẽ, đơn giản dành cho **macOS, Windows và Linux**, giúp bạn tải video chất lượng cao và trích xuất âm thanh từ YouTube, Facebook, TikTok và hàng trăm nền tảng khác.
 
 ---
 
 ## 📥 Tải về ngay (Cho người dùng)
 
-Để sử dụng ứng dụng ngay lập tức mà không cần quan tâm đến code, bạn chỉ cần tải file cài đặt bên dưới:
+Chọn phiên bản phù hợp với hệ điều hành của bạn:
 
-[![Download YTDown](https://img.shields.io/badge/Tải_về_cho-macOS_.dmg-0a84ff?style=for-the-badge&logo=apple)](https://github.com/JustinNguyen9979/YTDown/releases)
+[![Tải về cho macOS](https://img.shields.io/badge/macOS-Tải_về_.dmg-0a84ff?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/JustinNguyen9979/YTDown/releases)
 
-### 🍺 Cài đặt qua Homebrew (Recommended)
+[![Tải về cho Windows](https://img.shields.io/badge/Windows-Tải_về_.exe-0078d7?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/JustinNguyen9979/YTDown/releases)
+
+[![Tải về cho Linux](https://img.shields.io/badge/Linux-Tải_về_.AppImage-fca121?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/JustinNguyen9979/YTDown/releases)
+
+### 🍺 Cài đặt qua Homebrew (Cho macOS)
 
 ```bash
 brew tap justinNguyen9979/ytdown
 brew install --cask ytdown
 ```
 
-Để update:
-```bash
-brew upgrade --cask ytdown
-```
+---
 
-### 📦 Hoặc tải DMG trực tiếp
+## 🛠 Tự động cài đặt Dependencies
 
-> **Lưu ý quan trọng:**
-> - Khi mở lần đầu, app sẽ **tự động kiểm tra** các dependencies (ffmpeg, yt-dlp, gallery-dl)
-> - Nếu thiếu, app sẽ **yêu cầu cài đặt qua Homebrew** (cần Homebrew được cài sẵn)
-> - Sau khi cài đặt, app sẽ **tự động khởi động lại**
->
-> Nếu macOS báo "App is damaged" hoặc "Unidentified Developer", hãy nhấn chuột phải vào ứng dụng và chọn **Open**.
+YTDown được thiết kế để hoạt động "mì ăn liền". Khi bạn mở app lần đầu, nó sẽ tự động kiểm tra và hướng dẫn cài đặt các công cụ hỗ trợ (`ffmpeg`, `yt-dlp`, `gallery-dl`) tùy theo hệ điều hành:
 
-**Yêu cầu:** Homebrew phải được cài sẵn (xem hướng dẫn dưới)
+*   **macOS:** Tự động cài qua **Homebrew**.
+*   **Windows:** Tự động cài qua **Winget**.
+*   **Linux:** Tự động cài qua trình quản lý gói của hệ thống (apt, dnf, pacman...).
 
 ---
 
@@ -120,21 +118,20 @@ Dành cho các bạn muốn đóng góp hoặc tùy chỉnh ứng dụng:
    ```
    *Ứng dụng hoàn thiện sẽ nằm trong thư mục `build/bin/YTDown.app`.*
 
-5. **Tạo file cài đặt (.dmg):**
-   Sử dụng script build có sẵn trong dự án:
-   ```bash
-   bash build.sh
-   ```
+5. **Tạo file đóng gói:**
+   - macOS (.dmg): `bash build.sh`
+   - Windows (.exe): `bash build-windows.sh`
+   - Linux (.AppImage): `bash build-linux.sh`
 
 ## 🌟 Tính năng chính
 
 - Hỗ trợ tải video chất lượng cao từ nhiều nguồn: **YouTube, Facebook/Instagram Reels, TikTok, Xiaohongshu/Rednote**,...
-- Hỗ trợ download bằng **cookie** cho các video ytb bị giới hạn.
+- Hỗ trợ download bằng **cookie** cho các video ytb bị giới hạn độ tuổi.
 - Tự động nhận diện và xử lý liên kết thông minh.
 - Hỗ trợ tải từng video đơn lẻ hoặc toàn bộ danh sách phát (Playlist).
 - Tùy chọn định dạng xuất tệp: `MP4` (Video) hoặc `MP3` (Âm thanh).
 - Chọn chất lượng video mong muốn (1080p, 720p, 4k...).
-- Tự động kiểm tra và cập nhật `yt-dlp` ngay trong App.
+- Tự động kiểm tra và cập nhật `yt-dlp`, `gallery-dl` ngay trong App.
 - Hiển thị Thumbnail video, xem video trực tiếp từ Thumbnails.
 - Download ảnh cuộn từ X, Instagram, Tikok...
 
@@ -149,7 +146,9 @@ YTDown/
 ├── compressor.go   # Xử lý nén video/hình ảnh
 ├── main.go         # Điểm khởi đầu của ứng dụng
 ├── frontend/       # Giao diện người dùng (JS/HTML/CSS)
-├── build.sh        # Script đóng gói ứng dụng chuyên nghiệp
+├── build.sh        # Script đóng gói macOS (.dmg)
+├── build-windows.sh # Script đóng gói Windows (.exe)
+├── build-linux.sh   # Script đóng gói Linux (.AppImage)
 └── README.md       # Tài liệu hướng dẫn
 ├── dependency_checker.go  # Tự động kiểm tra & cài dependencies
 ├── app_update.go          # Tự động kiểm tra cập nhật phiên bản
