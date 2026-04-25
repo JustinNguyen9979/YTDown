@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -137,9 +138,10 @@ func (a *App) GetVersionStatus() []BinaryVersion {
 		}
 
 		// ✅ Dùng platform manager — mỗi OS tự xử lý (brew/GitHub API/pip)
+		current = normalizeVersion(current)
 		latest := current
 		if v := a.pm.GetLatestVersion("yt-dlp"); v != "" {
-			latest = v
+			latest = normalizeVersion(v)
 		}
 
 		versions = append(versions, BinaryVersion{
@@ -163,9 +165,10 @@ func (a *App) GetVersionStatus() []BinaryVersion {
 		}
 
 		// ✅ Dùng platform manager — không hardcode brew
+		current = normalizeVersion(current)
 		latest := current
 		if v := a.pm.GetLatestVersion("gallery-dl"); v != "" {
-			latest = v
+			latest = normalizeVersion(v)
 		}
 
 		versions = append(versions, BinaryVersion{
@@ -1314,4 +1317,17 @@ func (a *App) StartCompression(filePaths []string, options CompressionOptions) e
 	}()
 
 	return nil
+}
+
+// normalizeVersion xóa leading zero trong từng phần của version
+// Ví dụ: "2026.03.17" → "2026.3.17", "1.08.2" → "1.8.2"
+func normalizeVersion(v string) string {
+	v = strings.TrimPrefix(v, "v")
+	parts := strings.Split(v, ".")
+	for i, p := range parts {
+		if n, err := strconv.Atoi(p); err == nil {
+			parts[i] = strconv.Itoa(n) // tự động bỏ leading zero
+		}
+	}
+	return strings.Join(parts, ".")
 }
