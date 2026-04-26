@@ -190,7 +190,7 @@ func (m *Manager) AppDataDir() string {
 func (m *Manager) OpenFolder(path string) error { return exec.Command("xdg-open", path).Start() }
 func (m *Manager) OpenFile(path string) error   { return exec.Command("xdg-open", path).Start() }
 func (m *Manager) OSName() string               { return "Linux" }
-func (m *Manager) UpdateAssetSuffix() string    { return "-Linux.AppImage" }
+func (p *Manager) UpdateAssetSuffix() string    { return "-Linux.AppImage" }
 
 func (m *Manager) InstallAppUpdate(downloadURL string, parentPID int) error {
 	execPath, _ := os.Executable()

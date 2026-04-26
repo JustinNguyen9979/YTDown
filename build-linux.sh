@@ -1,42 +1,28 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -e
-VERSION=${VERSION:-$(date +%Y.%-m.%-d)}
-APP=YTDown
+
+APP=$(cat wails.json | python3 -c "import sys, json; print(json.load(sys.stdin)['name'])")
+VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "$(date +%Y.%-m.%-d)")
+
+echo "🔨 Building $APP $VERSION for Linux..."
+
 mkdir -p dist
 
-wails build -platform linux/amd64 \
-  -ldflags "-s -w -X main.version=${VERSION}"
+wails build -platform linux/amd64 -ldflags "-X main.Version=$VERSION"
 
-# Tạo AppDir layout
-rm -rf AppDir
-mkdir -p AppDir/usr/bin AppDir/usr/share/icons/hicolor/256x256/apps
+echo "📦 Packaging AppImage..."
 
+cp -r build/appimage/AppDir .
 cp build/bin/$APP AppDir/usr/bin/$APP
-[ -f build/linux/icon.png ] && \
-  cp build/linux/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/$APP.png && \
-  cp build/linux/icon.png AppDir/$APP.png
 
-cat > AppDir/$APP.desktop << EOF
-[Desktop Entry]
-Name=$APP
-Exec=$APP
-Icon=$APP
-Type=Application
-Categories=AudioVideo;Network;
-EOF
+sed -i "s/APP_NAME/$APP/g" AppDir/$APP.desktop
+cp AppDir/usr/share/icons/hicolor/256x256/apps/$APP.png AppDir/$APP.png
 
-cat > AppDir/AppRun << 'EOF'
-#!/bin/sh
-HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/bin/YTDown" "$@"
-EOF
-chmod +x AppDir/AppRun
-
-# Tải appimagetool và đóng gói
-wget -q -O appimagetool \
-  https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
 chmod +x appimagetool
 
 ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir dist/$APP-$VERSION-Linux.AppImage
+
+rm -rf AppDir appimagetool
 
 echo "✅ dist/$APP-$VERSION-Linux.AppImage"

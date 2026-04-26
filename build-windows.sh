@@ -1,10 +1,15 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -e
-VERSION=${VERSION:-$(date +%Y.%-m.%-d)}
-mkdir -p dist
-wails build -platform windows/amd64 -nsis \
-  -ldflags "-s -w -X main.version=${VERSION}"
-  
-cp build/bin/YTDown-amd64-installer.exe dist/YTDown-$VERSION-Windows-Setup.exe
 
-echo "✅ dist/YTDown-$VERSION-Windows-Setup.exe"
+APP=$(cat wails.json | python3 -c "import sys, json; print(json.load(sys.stdin)['name'])")
+VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "$(date +%Y.%-m.%-d)")
+
+echo "🔨 Building $APP $VERSION for Windows..."
+
+mkdir -p dist
+
+wails build -platform windows/amd64 -nsis -ldflags "-X main.Version=$VERSION"
+
+cp build/bin/$APP-amd64-installer.exe dist/$APP-$VERSION-Windows-Setup.exe
+
+echo "✅ dist/$APP-$VERSION-Windows-Setup.exe"
