@@ -36,6 +36,7 @@ chmod +x AppDir/AppRun
 wget -q -O appimagetool \
   https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
 chmod +x appimagetool
-ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir dist/$APP-Linux.AppImage
 
-echo "✅ dist/$APP-Linux.AppImage"
+ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir dist/$APP-$VERSION-Linux.AppImage
+
+echo "✅ dist/$APP-$VERSION-Linux.AppImage"

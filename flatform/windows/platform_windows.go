@@ -271,7 +271,7 @@ func (m *Manager) OpenFile(path string) error {
 }
 
 func (m *Manager) OSName() string            { return "Windows" }
-func (m *Manager) UpdateAssetSuffix() string { return "-Setup.exe" }
+func (m *Manager) UpdateAssetSuffix() string { return "-Windows-Setup.exe" }
 
 func (m *Manager) InstallAppUpdate(downloadURL string, parentPID int) error {
 	tmpDir, _ := os.MkdirTemp("", "ytdown-update-*")
