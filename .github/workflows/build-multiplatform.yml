@@ -11,6 +11,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   build:
@@ -30,11 +32,21 @@ jobs:
             artifact_pattern: dist/*.exe
             name: Windows
 
+            # Linux amd64
           - os: ubuntu-22.04
             platform: linux
             build_script: bash build-linux.sh
-            artifact_pattern: dist/*.AppImage
-            name: Linux
+            artifact_pattern: dist/*.deb
+            artifact_name: ytdown-linux-amd64
+            name: Linux (amd64)
+
+            # Linux arm64
+          - os: ubuntu-22.04
+            platform: linux-arm64
+            build_script: bash build-linux.sh
+            artifact_pattern: dist/*.deb
+            artifact_name: ytdown-linux-arm64
+            name: Linux (arm64)
 
     runs-on: ${{ matrix.os }}
     name: Build (${{ matrix.name }})
@@ -58,8 +70,7 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev \
-            libayatana-appindicator3-dev wget libfuse2
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libayatana-appindicator3-dev wget libfuse2 dpkg-dev
 
       # ✅ FIX 1 & 2: Gộp 2 step Windows lại thành 1, sửa điều kiện macOS
       # (macOS không cần deps thêm ngoài Xcode CLI đã có sẵn trên runner)
@@ -181,3 +192,59 @@ jobs:
           git add Casks/ytdown.rb
           git commit -m "Update ytdown to $VERSION"
           git push
+
+  publish-apt-repo:
+    needs: release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Install apt repo tools
+        run: sudo apt-get install -y dpkg-dev apt-utils
+
+      - name: Download Linux amd64
+        uses: actions/download-artifact@v4
+        with:
+          name: ytdown-linux-amd64
+          path: debs/
+
+      - name: Download Linux arm64
+        uses: actions/download-artifact@v4
+        with:
+          name: ytdown-linux-arm64
+          path: debs/
+
+      - name: Build APT repository
+        run: |
+          mkdir -p apt-repo/pool/main
+          mkdir -p apt-repo/dists/stable/main/binary-amd64
+          mkdir -p apt-repo/dists/stable/main/binary-arm64
+
+          cp debs/*.deb apt-repo/pool/main/
+
+          cd apt-repo
+          dpkg-scanpackages --arch amd64 pool/main \
+            > dists/stable/main/binary-amd64/Packages
+          gzip -k dists/stable/main/binary-amd64/Packages
+
+          dpkg-scanpackages --arch arm64 pool/main \
+            > dists/stable/main/binary-arm64/Packages
+          gzip -k dists/stable/main/binary-arm64/Packages
+
+          cat > dists/stable/Release << RELEASE
+          Origin: YTDown
+          Label: YTDown
+          Suite: stable
+          Codename: stable
+          Architectures: amd64 arm64
+          Components: main
+          Description: YTDown APT Repository
+          RELEASE
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: apt-repo
+          destination_dir: apt
+          keep_files: false

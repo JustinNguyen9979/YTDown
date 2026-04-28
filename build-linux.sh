@@ -1,50 +1,94 @@
 #!/usr/bin/env bash
 set -e
 
-# ✅ FIX 1: Lấy version từ git tag (bỏ ${VERSION:-...})
 VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "$(date +%Y.%-m.%-d)")
 APP=YTDown
+PKG=ytdown
 
 mkdir -p dist
 
-# ✅ FIX 2: -X main.Version (V hoa)
-wails build -platform linux/amd64 \
+# Detect kiến trúc của runner tự động
+HOST_ARCH=$(uname -m)
+case "$HOST_ARCH" in
+  x86_64)  WAILS_ARCH="linux/amd64" ; DEB_ARCH="amd64" ;;
+  aarch64) WAILS_ARCH="linux/arm64" ; DEB_ARCH="arm64" ;;
+  arm64)   WAILS_ARCH="linux/arm64" ; DEB_ARCH="arm64" ;;
+  *)
+    echo "⚠️  Kiến trúc không xác định: $HOST_ARCH — mặc định amd64"
+    WAILS_ARCH="linux/amd64"
+    DEB_ARCH="amd64"
+    ;;
+esac
+
+echo "══════════════════════════════════════════"
+echo " Building $WAILS_ARCH → ${PKG}_${VERSION}_${DEB_ARCH}.deb"
+echo "══════════════════════════════════════════"
+
+# ── Build binary ──────────────────────────────────────────────
+wails build -platform "$WAILS_ARCH" \
   -ldflags "-s -w -X main.Version=${VERSION}"
 
-# Tạo AppDir layout (GIỮ NGUYÊN gốc)
-rm -rf AppDir
-mkdir -p AppDir/usr/bin AppDir/usr/share/icons/hicolor/256x256/apps
+# ── Tạo cấu trúc thư mục .deb ────────────────────────────────
+DEB_DIR="dist/${PKG}_${VERSION}_${DEB_ARCH}"
+rm -rf "$DEB_DIR"
+mkdir -p \
+  "$DEB_DIR/DEBIAN" \
+  "$DEB_DIR/usr/bin" \
+  "$DEB_DIR/usr/share/applications" \
+  "$DEB_DIR/usr/share/icons/hicolor/256x256/apps"
 
-cp build/bin/$APP AppDir/usr/bin/$APP
+# Copy binary
+cp "build/bin/$APP" "$DEB_DIR/usr/bin/$PKG"
+chmod +x "$DEB_DIR/usr/bin/$PKG"
 
+# Copy icon (nếu có)
 [ -f build/linux/icon.png ] && \
-  cp build/linux/icon.png AppDir/usr/share/icons/hicolor/256x256/apps/$APP.png && \
-  cp build/linux/icon.png AppDir/$APP.png
+  cp build/linux/icon.png \
+     "$DEB_DIR/usr/share/icons/hicolor/256x256/apps/${PKG}.png"
 
-cat > AppDir/$APP.desktop << EOF
+# ── File .desktop ─────────────────────────────────────────────
+cat > "$DEB_DIR/usr/share/applications/${PKG}.desktop" << DESKTOP
 [Desktop Entry]
-Name=$APP
-Exec=$APP
-Icon=$APP
+Name=YTDown
+Comment=Tải video từ YouTube, TikTok, Facebook và hàng trăm nền tảng khác
+Exec=$PKG
+Icon=$PKG
 Type=Application
 Categories=AudioVideo;Network;
-EOF
+Terminal=false
+DESKTOP
 
-cat > AppDir/AppRun << 'EOF'
+# ── DEBIAN/control ────────────────────────────────────────────
+# Khai báo Depends → apt tự động cài ffmpeg, yt-dlp, gallery-dl
+cat > "$DEB_DIR/DEBIAN/control" << CONTROL
+Package: $PKG
+Version: $VERSION
+Architecture: $DEB_ARCH
+Maintainer: Justin Nguyen <justinnguyen9979@github.com>
+Homepage: https://github.com/JustinNguyen9979/YTDown
+Description: YTDown - Video & Media Downloader
+ Tải video từ YouTube, TikTok, Facebook và hàng trăm nền tảng khác.
+ Hỗ trợ batch download, cookie, playlist.
+Depends: ffmpeg, yt-dlp, gallery-dl
+CONTROL
+
+# ── DEBIAN/postinst ───────────────────────────────────────────
+cat > "$DEB_DIR/DEBIAN/postinst" << 'POSTINST'
 #!/bin/sh
-HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/bin/YTDown" "$@"
-EOF
+set -e
+echo ""
+echo "✅ YTDown đã được cài đặt thành công!"
+echo "   Các module (ffmpeg, yt-dlp, gallery-dl) đã được apt cài tự động."
+echo "   Chạy: ytdown"
+echo ""
+POSTINST
 
-chmod +x AppDir/AppRun
+chmod 755 "$DEB_DIR/DEBIAN/postinst"
 
-# Tải appimagetool và đóng gói (GIỮ NGUYÊN URL gốc)
-wget -q -O appimagetool \
-  https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+# ── Build .deb ────────────────────────────────────────────────
+dpkg-deb --build --root-owner-group \
+  "$DEB_DIR" \
+  "dist/${PKG}_${VERSION}_${DEB_ARCH}.deb"
 
-chmod +x appimagetool
-
-# ✅ FIX 3: Thêm $VERSION vào tên file
-ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir dist/$APP-$VERSION-Linux.AppImage
-
-echo "✅ dist/$APP-$VERSION-Linux.AppImage"
+echo "✅ dist/${PKG}_${VERSION}_${DEB_ARCH}.deb"
+rm -rf "$DEB_DIR"
