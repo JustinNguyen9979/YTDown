@@ -1,0 +1,7 @@
+Origin: YTDown
+Label: YTDown
+Suite: stable
+Codename: stable
+Architectures: amd64 arm64
+Components: main
+Description: YTDown APT Repository
