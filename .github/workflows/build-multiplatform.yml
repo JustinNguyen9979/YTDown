@@ -24,12 +24,14 @@ jobs:
             platform: darwin
             build_script: bash build.sh
             artifact_pattern: dist/*.dmg
+            artifact_name: ytdown-darwin
             name: macOS
 
           - os: windows-latest
             platform: windows
             build_script: bash build-windows.sh
             artifact_pattern: dist/*.exe
+            artifact_name: ytdown-windows
             name: Windows
 
             # Linux amd64
