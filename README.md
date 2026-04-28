@@ -21,6 +21,15 @@ brew tap justinNguyen9979/ytdown
 brew install --cask ytdown
 ```
 
+### 🐧 Cài đặt qua APT (Cho Debian/Ubuntu)
+
+```bash
+echo "deb [trusted=yes] https://JustinNguyen9979.github.io/YTDown/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/ytdown.list
+sudo apt update
+sudo apt install ytdown
+```
+
 ---
 
 ## 🛠 Tự động cài đặt Dependencies
