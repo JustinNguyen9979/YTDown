@@ -745,12 +745,40 @@ function applyGalleryControlState(status) {
     const browseBtn = document.getElementById('browseGalleryBtn');
     const threadsSelect = document.getElementById('galleryThreadsSelect');
     const ugoiraCheckbox = document.getElementById('galleryUgoiraToWebm');
+    const formatsTrigger = document.getElementById('galleryFormatsTrigger');
+    const formatsContainer = document.getElementById('galleryFormatsContainer');
+    const allFormatCb = document.getElementById('fmt-all');
+    const fmtCheckboxes = document.querySelectorAll('#galleryMediaList input[type="checkbox"]');
+    const galleryArgsInput = document.getElementById('galleryArgs');
+    const galleryArchiveCheckbox = document.getElementById('galleryArchive');
 
     if (!startBtn || !cancelBtn) return;
 
     const isRunning = status === 'running';
     
-    startBtn.disabled = isRunning;
+    if (isRunning) {
+        startBtn.disabled = true;
+        } else {
+            // Re-check format selection thay vì enable vô điều kiện
+            const anyChecked =
+                document.getElementById('fmt-all')?.checked ||
+                document.querySelectorAll('#galleryMediaList input[type="checkbox"]:checked').length > 0;
+            startBtn.disabled = !anyChecked;
+        }
+
+    if (formatsTrigger) {
+        formatsTrigger.disabled = isRunning;
+        formatsTrigger.style.pointerEvents = isRunning ? 'none' : '';
+        formatsTrigger.style.opacity = isRunning ? '0.5' : '';
+    }
+
+    if (formatsContainer && isRunning) {
+        formatsContainer.classList.remove('open'); // đóng dropdown nếu đang mở
+    }
+
+    if (allFormatCb) allFormatCb.disabled = isRunning;
+    fmtCheckboxes.forEach(cb => cb.disabled = isRunning);
+
     startBtn.innerHTML = isRunning ? '🖼 Downloading...' : '🖼 Start Download Images';
     cancelBtn.hidden = !isRunning;
     cancelBtn.disabled = !isRunning;
@@ -760,6 +788,8 @@ function applyGalleryControlState(status) {
     if (browseBtn) browseBtn.disabled = isRunning;
     if (threadsSelect) threadsSelect.disabled = isRunning;
     if (ugoiraCheckbox) ugoiraCheckbox.disabled = isRunning;
+    if (galleryArgsInput) galleryArgsInput.disabled = isRunning;
+    if (galleryArchiveCheckbox) galleryArchiveCheckbox.disabled = isRunning;
 
     refreshCustomSelectStates();
 }
