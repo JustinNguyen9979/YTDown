@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "$(date +%Y.%-m.%-d)")
+VERSION=${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo "$(date +%Y.%-m.%-d)")}
 APP=YTDown
 PKG=ytdown
 

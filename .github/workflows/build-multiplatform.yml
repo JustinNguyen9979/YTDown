@@ -231,13 +231,12 @@ jobs:
           cp debs/*.deb apt-repo/pool/main/
 
           cd apt-repo
-          dpkg-scanpackages --arch amd64 pool/main \
-            > dists/stable/main/binary-amd64/Packages
+          dpkg-scanpackages --arch amd64 pool/main > dists/stable/main/binary-amd64/Packages
           gzip -k dists/stable/main/binary-amd64/Packages
 
-          dpkg-scanpackages --arch arm64 pool/main \
-            > dists/stable/main/binary-arm64/Packages
+          dpkg-scanpackages --arch arm64 pool/main > dists/stable/main/binary-arm64/Packages
           gzip -k dists/stable/main/binary-arm64/Packages
+          apt-ftparchive release dists/stable > dists/stable/Release
 
           cat > dists/stable/Release << RELEASE
           Origin: YTDown
@@ -255,4 +254,4 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: apt-repo
           destination_dir: apt
-          keep_files: true
+          keep_files: false
