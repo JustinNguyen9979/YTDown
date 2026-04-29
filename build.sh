@@ -4,26 +4,10 @@
 
 set -e
 
-BASE_DATE=$(date +"%-Y.%-m.%-d")
-
-# Bản đầu tiên: "2026.4.13" (không có .0)
-# Bản hotfix:   "2026.4.13.1", "2026.4.13.2"...
-if git rev-parse "$BASE_DATE" >/dev/null 2>&1; then
-    PATCH=1
-    while git rev-parse "$BASE_DATE.$PATCH" >/dev/null 2>&1; do
-        PATCH=$((PATCH + 1))
-    done
-    VERSION="$BASE_DATE.$PATCH"
-else
-    VERSION="$BASE_DATE"
+if [[ -z "$VERSION" || ! "$VERSION" =~ ^[0-9] ]]; then
+  VERSION=$(bash "$(dirname "$0")/get-version.sh")
 fi
-
 YEAR=$(date +"%Y")
-
-if [ -n "$GITHUB_OUTPUT" ]; then
-  echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-  echo "year=$YEAR" >> "$GITHUB_OUTPUT"
-fi
 
 OUTPUT_DIR="dist"
 APP_NAME="YTDown"

@@ -15,7 +15,27 @@ permissions:
   id-token: write
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.calc.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Calculate version
+        id: calc
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            # Tag push thủ công: dùng tag làm version luôn
+            echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            # Push lên main: tự tính version mới
+            bash get-version.sh
+          fi
+
   build:
+    needs: version
     strategy:
       fail-fast: false
       matrix:
@@ -54,6 +74,7 @@ jobs:
     name: Build (${{ matrix.name }})
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      VERSION: ${{ needs.version.outputs.version }}
 
     steps:
       - uses: actions/checkout@v4
@@ -97,8 +118,6 @@ jobs:
       - name: Build
         id: build
         run: ${{ matrix.build_script }}
-        env:
-          VERSION: ${{ github.ref_name }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -107,47 +126,14 @@ jobs:
           path: ${{ matrix.artifact_pattern }}
 
   release:
-    needs: build
+    needs: [version, build]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
     # ✅ Expose version ra ngoài để update-homebrew dùng
     outputs:
-      version: ${{ steps.version.outputs.VERSION }}
+      version: ${{ needs.version.outputs.version }}
 
     steps:
-      # ✅ FIX 3 & 5: Thêm step set version — nếu có tag thì dùng tag,
-      #               nếu push lên main thì tạo version từ ngày (YYYY.M.D)
-      - name: Set version
-        id: version
-        env: 
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "VERSION=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          else
-            BASE_VERSION=$(date +'%Y.%-m.%-d')
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              "https://api.github.com/repos/${{ github.repository }}/releases/tags/$BASE_VERSION")
-            if [ "$STATUS" = "200" ]; then
-              COUNTER=1
-              while true; do
-                NEW_VERSION="${BASE_VERSION}.${COUNTER}"
-                STATUS2=$(curl -s -o /dev/null -w "%{http_code}" \
-                  -H "Authorization: token $GITHUB_TOKEN" \
-                  "https://api.github.com/repos/${{ github.repository }}/releases/tags/$NEW_VERSION")
-                if [ "$STATUS2" != "200" ]; then
-                  echo "VERSION=$NEW_VERSION" >> $GITHUB_OUTPUT
-                  break
-                fi
-                COUNTER=$((COUNTER + 1))
-              done
-            else
-              echo "VERSION=$BASE_VERSION" >> $GITHUB_OUTPUT
-            fi
-          fi
-        
-
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -161,8 +147,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.VERSION }}
-          name: "YTDown ${{ steps.version.outputs.VERSION }}"
+          tag_name: ${{ needs.version.outputs.version }}
+          name: "YTDown ${{ needs.version.outputs.version }}"
           generate_release_notes: true
           make_latest: true
           files: dist/*
