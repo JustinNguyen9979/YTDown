@@ -255,4 +255,4 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: apt-repo
           destination_dir: apt
-          keep_files: false
+          keep_files: true
