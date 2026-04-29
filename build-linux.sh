@@ -26,6 +26,7 @@ echo "════════════════════════�
 
 # ── Build binary ──────────────────────────────────────────────
 wails build -platform "$WAILS_ARCH" \
+  -tags webkit2_41 \
   -ldflags "-s -w -X main.Version=${VERSION}"
 
 # ── Tạo cấu trúc thư mục .deb ────────────────────────────────
@@ -69,7 +70,7 @@ Homepage: https://github.com/JustinNguyen9979/YTDown
 Description: YTDown - Video & Media Downloader
  Tải video từ YouTube, TikTok, Facebook và hàng trăm nền tảng khác.
  Hỗ trợ batch download, cookie, playlist.
-Depends: ffmpeg, yt-dlp, gallery-dl
+Depends: ffmpeg, yt-dlp, gallery-dl, libwebkit2gtk-4.1-0, libgtk-3-0
 CONTROL
 
 # ── DEBIAN/postinst ───────────────────────────────────────────
