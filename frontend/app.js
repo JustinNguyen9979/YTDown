@@ -2198,17 +2198,6 @@ function renderInfoTab() {
         </ul>
       </div>
 
-      <div class="info-section">
-        <h3>💛 Support & Donate</h3>
-        <p style="margin-bottom:10px;">If YTDown helps with your work, please buy me a coffee ☕</p>
-        <ul>
-          <li><strong>Bank:</strong> MB Bank</li>
-          <li><strong>Account:</strong> <code>079 88888 88888</code></li>
-          <li><strong>Holder:</strong> Nguyen Duc Huy</li>
-          <li><strong>PayPal:</strong> <code>duchuy_1997@hotmail.com</code></li>
-        </ul>
-      </div>
-
       <div class="info-footer">
         <p style="color: var(--text-secondary); font-size: 13px;">
           Made with ❤️ by Justin Nguyen &nbsp;·&nbsp; 

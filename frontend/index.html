@@ -7,12 +7,137 @@
     <link rel="stylesheet" href="style.css">
     <script src="tooltips.js"></script>
 </head>
+
+<div class="donation-backdrop" id="donationBackdrop" role="dialog" aria-modal="true" aria-label="Support the Creator">
+  <div class="donation-modal" id="donationModal">
+
+    <!-- Header -->
+    <div class="dm-header">
+      <div class="dm-title-group">
+        <div class="dm-icon">☕</div>
+        <div>
+          <div class="dm-title">Support the Creator</div>
+          <div class="dm-subtitle">Thank you for using YTDown 🚀</div>
+        </div>
+      </div>
+      <button class="dm-close" id="dmCloseBtn" aria-label="Close">✕</button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="dm-tabs">
+      <button class="dm-tab active" data-tab="bank">🏦 Bank</button>
+      <button class="dm-tab" data-tab="momo">💜 MoMo</button>
+      <button class="dm-tab" data-tab="intl">🌍 International</button>
+    </div>
+
+    <!-- Pane: Bank -->
+    <div class="dm-pane active" id="dm-pane-bank">
+      <div class="dm-payment-layout">
+        <div class="dm-qr-wrap">
+          <div class="dm-qr-frame">
+            <img
+              id="dmBankQR"
+              src="https://img.vietqr.io/image/MB-0798888888888-compact.png"
+              alt="QR chuyển khoản MB Bank"
+              loading="lazy"
+            />
+          </div>
+          <span class="dm-qr-label">Scan with your banking app</span>
+        </div>
+        <div class="dm-info">
+          <span class="dm-badge bank">🏦 MB Bank</span>
+          <div class="dm-divider"></div>
+          <div class="dm-field">
+            <span class="dm-field-label">Account Number</span>
+            <div class="dm-field-row">
+              <span class="dm-field-value" id="dmBankSTK">079 88888 88888</span>
+              <button class="dm-copy-btn" data-copy="07988888 88888" aria-label="Copy Account Number">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="dm-field">
+            <span class="dm-field-label">Account Holder</span>
+            <span class="dm-field-value sm">NGUYEN DUC HUY</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pane: MoMo -->
+    <div class="dm-pane" id="dm-pane-momo">
+      <div class="dm-payment-layout">
+        <div class="dm-qr-wrap">
+          <div class="dm-qr-frame">
+            <img
+              id="dmMomoQR"
+              src="./build/momo.jpeg"
+              alt="QR MoMo"
+              loading="lazy"
+            />
+          </div>
+          <span class="dm-qr-label">Scan with your MoMo app</span>
+        </div>
+        <div class="dm-info">
+          <span class="dm-badge momo">💜 MoMo</span>
+          <div class="dm-divider"></div>
+          <div class="dm-field">
+            <span class="dm-field-label">Phone Number</span>
+            <div class="dm-field-row">
+              <span class="dm-field-value" id="dmMomoPhone">0909 000 000</span>
+              <button class="dm-copy-btn" data-copy="0909000000" aria-label="Copy Phone Number">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="dm-field">
+            <span class="dm-field-label">Account Holder</span>
+            <span class="dm-field-value sm">NGUYEN DUC HUY</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pane: International -->
+    <div class="dm-pane" id="dm-pane-intl">
+      <div class="dm-intl-list">
+        <div class="dm-intl-card">
+          <div class="dm-intl-card-left">
+            <div class="dm-intl-icon" style="background: rgba(255,94,91,0.15);">☕</div>
+            <div>
+              <div class="dm-intl-name">Ko-fi</div>
+              <div class="dm-intl-desc">ko-fi.com/justinnguyenvn</div>
+            </div>
+          </div>
+          <a href="https://ko-fi.com/justinnguyenvn" target="_blank" rel="noopener noreferrer" class="dm-intl-btn kofi" onclick="return false;">☕ Donate</a>
+        </div>
+        <div class="dm-intl-card">
+          <div class="dm-intl-card-left">
+            <div class="dm-intl-icon" style="background: rgba(0,100,210,0.15);">🅿️</div>
+            <div>
+              <div class="dm-intl-name">PayPal</div>
+              <div class="dm-intl-desc" id="dmPaypalDesc">hades011097@gmail.com</div>
+            </div>
+          </div>
+          <a href="https://paypal.me/hades011097" target="_blank" rel="noopener noreferrer" class="dm-intl-btn paypal" onclick="return false;">💳 PayPal</a>
+        </div>
+        <p class="dm-intl-footer">Every donation helps YTDown grow better ❤️</p>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="dm-footer">🔒 Secure payment info · No personal data stored</div>
+
+  </div>
+</div>
+
+
 <body>
     <div class="container">
         <!-- Header -->
         <div class="header">
             <h1>🎬 YTDown</h1>
-            <button id="donateBtnKofi" class="donate-btn" title="Support the author ☕">
+            <button class="donate-btn" onclick="DonationModal.open()">
                 ☕ Buy me a coffee
             </button>
         </div>
@@ -277,5 +402,6 @@
     </div>
 
     <script src="app.js"></script>
+    <script src="donation-modal.js"></script>
 </body>
 </html>
