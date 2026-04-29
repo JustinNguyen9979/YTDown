@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -e
 
-VERSION=${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo "$(date +%Y.%-m.%-d)")}
+if [[ -n "$VERSION" && "$VERSION" =~ ^[0-9] ]]; then
+  : 
+else
+  VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "$(date +%Y.%-m.%-d)")
+fi
 APP=YTDown
 PKG=ytdown
 
