@@ -103,18 +103,35 @@ func (m *Manager) UpgradeTool(name, binaryPath string) error {
 	if m.pmBin == "" {
 		return fmt.Errorf("không tìm thấy package manager — vui lòng nâng cấp %s thủ công", name)
 	}
+
+	var shellCmd string
 	switch m.pm {
 	case "apt":
-		// --only-upgrade: chỉ upgrade nếu đã cài, không cài mới
-		return exec.Command("sudo", m.pmBin, "install", "--only-upgrade", "-y", name).Run()
+		// ✅ apt update trước để refresh cache
+		shellCmd = fmt.Sprintf("%s update -qq && %s install --only-upgrade -y %s",
+			m.pmBin, m.pmBin, name)
 	case "dnf":
-		return exec.Command("sudo", m.pmBin, "upgrade", "-y", name).Run()
+		shellCmd = fmt.Sprintf("%s upgrade -y %s", m.pmBin, name)
 	case "pacman":
-		return exec.Command("sudo", m.pmBin, "-S", "--noconfirm", name).Run()
+		shellCmd = fmt.Sprintf("%s -S --noconfirm %s", m.pmBin, name)
 	case "zypper":
-		return exec.Command("sudo", m.pmBin, "update", "-y", name).Run()
+		shellCmd = fmt.Sprintf("%s update -y %s", m.pmBin, name)
+	default:
+		return fmt.Errorf("upgrade không được hỗ trợ cho %s trên hệ thống này", name)
 	}
-	return fmt.Errorf("upgrade không được hỗ trợ cho %s trên hệ thống này", name)
+
+	var cmd *exec.Cmd
+	if _, err := exec.LookPath("pkexec"); err == nil {
+		cmd = exec.Command("pkexec", "sh", "-c", shellCmd)
+	} else {
+		cmd = exec.Command("sudo", "sh", "-c", shellCmd)
+	}
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("upgrade %s thất bại: %w\n%s", name, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func (m *Manager) LaunchSetup() error {
@@ -205,35 +222,28 @@ func (m *Manager) OSName() string               { return "Linux" }
 
 func (m *Manager) UpdateAssetSuffix() string { return "-Linux.deb" }
 
-func (m *Manager) InstallAppUpdate(downloadURL string, parentPID int) error {
+func (m *Manager) InstallAppUpdate(_ string, parentPID int) error {
 	execPath, _ := os.Executable()
-	tmpDir, _ := os.MkdirTemp("", "ytdown-update-*")
-	debPath := filepath.Join(tmpDir, "ytdown.deb")
 
 	script := fmt.Sprintf(`#!/bin/sh
 PARENT_PID=%d
-DEB=%q
 EXEC=%q
 
 while kill -0 "$PARENT_PID" 2>/dev/null; do sleep 1; done
 
-curl -L --fail -o "$DEB" %q || exit 1
-
-# Dùng pkexec thay sudo để có GUI password prompt
+# ✅ apt update + upgrade, không cần curl/dpkg
 if command -v pkexec >/dev/null 2>&1; then
-    pkexec dpkg -i "$DEB"
-elif command -v gksu >/dev/null 2>&1; then
-    gksu dpkg -i "$DEB"
+    pkexec sh -c "apt-get update -qq && apt-get install --only-upgrade -y ytdown"
 else
-    sudo dpkg -i "$DEB"
+    sudo sh -c "apt-get update -qq && apt-get install --only-upgrade -y ytdown"
 fi
 
-# Restart app sau khi cài xong
 "$EXEC" &
-rm -rf "$(dirname "$DEB")"
-`, parentPID, debPath, execPath, downloadURL)
+`, parentPID, execPath)
 
-	scriptPath := filepath.Join(tmpDir, "update.sh")
-	os.WriteFile(scriptPath, []byte(script), 0755)
-	return exec.Command("sh", scriptPath).Start()
+	tmpFile, _ := os.CreateTemp("", "ytdown-appupdate-*.sh")
+	tmpFile.WriteString(script)
+	tmpFile.Close()
+	os.Chmod(tmpFile.Name(), 0755)
+	return exec.Command("sh", tmpFile.Name()).Start()
 }

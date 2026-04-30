@@ -73,6 +73,20 @@ func (a *App) InstallAppUpdate() error {
 	if !info.Available {
 		return fmt.Errorf("no newer update available")
 	}
+
+	if a.pm.OSName() == "Linux" {
+		if err := a.pm.InstallAppUpdate("", os.Getpid()); err != nil {
+			return err
+		}
+		runtime.EventsEmit(a.ctx, "app-update-started", map[string]interface{}{"version": info.Latest})
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			runtime.Quit(a.ctx)
+		}()
+		return nil
+	}
+
+	// macOS: Tải DMG, gắn vào, copy app ra, rồi mở app mới
 	if info.DownloadURL == "" {
 		return fmt.Errorf("no release asset found for %s", a.pm.OSName())
 	}
