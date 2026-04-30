@@ -1,13 +1,13 @@
 Package: ytdown
-Version: 2026.4.30.2
+Version: 2026.4.30.3
 Architecture: amd64
 Maintainer: Justin Nguyen <justinnguyen9979@github.com>
 Depends: ffmpeg, yt-dlp, gallery-dl, libwebkit2gtk-4.1-0, libgtk-3-0
-Filename: pool/main/ytdown_2026.4.30.2_amd64.deb
-Size: 3926282
-MD5sum: 556c0d3c26d846fc132429c50c2a50f9
-SHA1: fda8f4d3b5c2061c6e45901c5c898c003b584911
-SHA256: 38611c0201799e6add1ec53eab600345060799311fbc71c7cf6f1377ee252a61
+Filename: pool/main/ytdown_2026.4.30.3_amd64.deb
+Size: 3927298
+MD5sum: 8ca68d369625d341e2d180f010c051b3
+SHA1: 309916a2ee6fefa8ce0b4bbd9dc8519b7418e34f
+SHA256: 306d2dec80e74ae559996702d09f633994a5bf8d5accfc8676cfa974c05c0757
 Homepage: https://github.com/JustinNguyen9979/YTDown
 Description: YTDown - Video & Media Downloader
  Tải video từ YouTube, TikTok, Facebook và hàng trăm nền tảng khác.
