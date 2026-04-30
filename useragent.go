@@ -34,7 +34,7 @@ func GetUserAgent(browser string) string {
 	uaCacheMu.RUnlock()
 
 	// macOS: fetch UA thực qua yt-dlp (async, không block)
-	if !fetching && runtime.GOOS == "darwin" {
+	if !fetching && (runtime.GOOS == "darwin" || runtime.GOOS == "linux") {
 		uaCacheMu.Lock()
 		uaFetching[browser] = true
 		uaCacheMu.Unlock()

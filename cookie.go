@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -350,6 +351,10 @@ func (m *CookieManager) GetBrowserData(ctx context.Context, browser string, targ
 }
 
 func (m *CookieManager) ExtractBrowserDataForDomain(ctx context.Context, browser string, targetHost string) (*BrowserExportData, error) {
+	if runtime.GOOS == "linux" {
+		return m.extractBrowserDataViaYTDLP(ctx, browser, targetHost)
+	}
+
 	stores := kooky.FindAllCookieStores(ctx)
 
 	var allCookies []parsedCookie
@@ -958,4 +963,157 @@ func writeTemporaryCookieFile(cookies []parsedCookie, domain string) (string, er
 	}
 
 	return path, nil
+}
+
+// ── Linux cookie extraction via yt-dlp ────────────────────────────────────
+
+// extractBrowserDataViaYTDLP dùng yt-dlp --cookies-from-browser thay vì kooky
+// để tránh vấn đề GNOME Keyring/KWallet decrypt trên Linux.
+func (m *CookieManager) extractBrowserDataViaYTDLP(
+	ctx context.Context, browser string, targetHost string,
+) (*BrowserExportData, error) {
+	ytdlp := getResourcePath("yt-dlp")
+	if ytdlp == "" {
+		return nil, fmt.Errorf("yt-dlp not found")
+	}
+
+	extractionURL := buildExtractionURL(targetHost)
+
+	tempDir, err := os.MkdirTemp("", "ytdown-cookies-*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+	tempCookieFile := filepath.Join(tempDir, "cookies.txt")
+
+	cmdCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	// yt-dlp sẽ export cookies dù download fail → bỏ qua exit error
+	_ = exec.CommandContext(cmdCtx, ytdlp,
+		"--cookies-from-browser", browser,
+		"--cookies", tempCookieFile,
+		"--no-warnings",
+		"--no-playlist",
+		extractionURL,
+	).Run()
+
+	raw, err := os.ReadFile(tempCookieFile)
+	if err != nil {
+		return nil, fmt.Errorf("cookie file not written by yt-dlp: %w", err)
+	}
+
+	cookies, xhsSession := parseNetscapeCookieFileForDomain(string(raw), targetHost)
+	userAgent := GetUserAgent(browser)
+
+	result := &BrowserExportData{
+		BrowserName: browser,
+		UserAgent:   userAgent,
+		WebSession:  xhsSession,
+		Cookies:     cookies,
+		Headers:     make(map[string]string),
+		ExportTime:  time.Now(),
+	}
+	if xhsSession != "" {
+		result.Headers["Cookie"] = "web_session=" + xhsSession
+	}
+	LogInfo("[Cookie] yt-dlp extracted %d cookies for %s from %s",
+		len(cookies), targetHost, browser)
+	return result, nil
+}
+
+// buildExtractionURL trả về URL phù hợp để yt-dlp extract cookies đúng domain
+func buildExtractionURL(targetHost string) string {
+	switch {
+	case strings.Contains(targetHost, "xiaohongshu.com") ||
+		strings.Contains(targetHost, "xhslink.com"):
+		return "https://www.xiaohongshu.com/"
+	case strings.Contains(targetHost, "instagram.com"):
+		return "https://www.instagram.com/"
+	case strings.Contains(targetHost, "tiktok.com"):
+		return "https://www.tiktok.com/"
+	case strings.Contains(targetHost, "twitter.com") ||
+		strings.Contains(targetHost, "x.com"):
+		return "https://x.com/"
+	case strings.Contains(targetHost, "bilibili.com"):
+		return "https://www.bilibili.com/"
+	case strings.Contains(targetHost, "pixiv.net"):
+		return "https://www.pixiv.net/"
+	default:
+		return "https://www.youtube.com/"
+	}
+}
+
+// parseNetscapeCookieFileForDomain parse Netscape cookie file, filter theo domain
+// và bắt web_session cho Xiaohongshu.
+func parseNetscapeCookieFileForDomain(content, targetHost string) ([]parsedCookie, string) {
+	var cookies []parsedCookie
+	var xhsSession string
+
+	// Build relevant domains
+	var relevantDomains []string
+	if strings.Contains(targetHost, "xiaohongshu.com") || strings.Contains(targetHost, "xhslink.com") {
+		relevantDomains = []string{"xiaohongshu.com", "xhslink.com"}
+	} else if strings.Contains(targetHost, "youtube.com") || strings.Contains(targetHost, "youtu.be") {
+		relevantDomains = []string{"youtube.com"}
+	} else if targetHost != "" {
+		parts := strings.Split(targetHost, ".")
+		if len(parts) >= 2 {
+			relevantDomains = []string{parts[len(parts)-2] + "." + parts[len(parts)-1]}
+		}
+	}
+
+	seen := make(map[string]bool)
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Netscape format: domain \t domainFlag \t path \t secure \t expiry \t name \t value
+		parts := strings.Split(line, "\t")
+		if len(parts) < 7 {
+			continue
+		}
+		domain, path, name, value := parts[0], parts[2], parts[5], parts[6]
+
+		// Filter by domain
+		if len(relevantDomains) > 0 {
+			matched := false
+			for _, rd := range relevantDomains {
+				if strings.Contains(domain, rd) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
+		}
+
+		// Dedup
+		key := strings.TrimPrefix(domain, ".") + "|" + name
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		var expiry int64
+		fmt.Sscanf(parts[4], "%d", &expiry)
+		secure := strings.EqualFold(parts[3], "TRUE")
+
+		cookies = append(cookies, parsedCookie{
+			Domain:  domain,
+			Path:    path,
+			Name:    name,
+			Value:   value,
+			Secure:  secure,
+			Expires: expiry,
+		})
+
+		if name == "web_session" &&
+			(strings.Contains(domain, "xiaohongshu.com") || strings.Contains(domain, "xhslink.com")) {
+			xhsSession = value
+		}
+	}
+	return cookies, xhsSession
 }
