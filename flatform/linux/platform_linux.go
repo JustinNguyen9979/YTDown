@@ -206,13 +206,30 @@ func (m *Manager) UpdateAssetSuffix() string { return "-Linux.deb" }
 func (m *Manager) InstallAppUpdate(downloadURL string, parentPID int) error {
 	execPath, _ := os.Executable()
 	tmpDir, _ := os.MkdirTemp("", "ytdown-update-*")
+	debPath := filepath.Join(tmpDir, "ytdown.deb")
+
 	script := fmt.Sprintf(`#!/bin/sh
 PARENT_PID=%d
-NEW=%q/ytdown.deb
+DEB=%q
+EXEC=%q
+
 while kill -0 "$PARENT_PID" 2>/dev/null; do sleep 1; done
-curl -L --fail -o "$NEW" %q
-sudo dpkg -i "$NEW"
-%q &`, parentPID, tmpDir, downloadURL, execPath)
+
+curl -L --fail -o "$DEB" %q || exit 1
+
+# Dùng pkexec thay sudo để có GUI password prompt
+if command -v pkexec >/dev/null 2>&1; then
+    pkexec dpkg -i "$DEB"
+elif command -v gksu >/dev/null 2>&1; then
+    gksu dpkg -i "$DEB"
+else
+    sudo dpkg -i "$DEB"
+fi
+
+# Restart app sau khi cài xong
+"$EXEC" &
+rm -rf "$(dirname "$DEB")"
+`, parentPID, debPath, execPath, downloadURL)
 
 	scriptPath := filepath.Join(tmpDir, "update.sh")
 	os.WriteFile(scriptPath, []byte(script), 0755)

@@ -213,26 +213,29 @@ jobs:
           mkdir -p apt-repo/pool/main
           mkdir -p apt-repo/dists/stable/main/binary-amd64
           mkdir -p apt-repo/dists/stable/main/binary-arm64
-
           cp debs/*.deb apt-repo/pool/main/
 
           cd apt-repo
           dpkg-scanpackages --arch amd64 pool/main > dists/stable/main/binary-amd64/Packages
           gzip -k dists/stable/main/binary-amd64/Packages
-
           dpkg-scanpackages --arch arm64 pool/main > dists/stable/main/binary-arm64/Packages
           gzip -k dists/stable/main/binary-arm64/Packages
-          apt-ftparchive release dists/stable > dists/stable/Release
 
-          cat > dists/stable/Release << RELEASE
-          Origin: YTDown
-          Label: YTDown
-          Suite: stable
-          Codename: stable
-          Architectures: amd64 arm64
-          Components: main
-          Description: YTDown APT Repository
-          RELEASE
+          # ✅ Tạo config cho apt-ftparchive TRƯỚC
+          cat > /tmp/apt-ftparchive.conf << 'EOF'
+          APT::FTPArchive::Release {
+            Origin "YTDown";
+            Label "YTDown";
+            Suite "stable";
+            Codename "stable";
+            Architectures "amd64 arm64";
+            Components "main";
+            Description "YTDown APT Repository";
+          };
+          EOF
+
+          # ✅ Chỉ dùng apt-ftparchive, KHÔNG dùng cat > để ghi đè
+          apt-ftparchive -c /tmp/apt-ftparchive.conf release dists/stable > dists/stable/Release
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
