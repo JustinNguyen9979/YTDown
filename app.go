@@ -372,7 +372,7 @@ func (a *App) UpdateCookieConfig(mode string, browser string) error {
 	if mode == string(CookieModeBrowser) && browser != "" {
 		// Prefetch User-Agent asynchronously so it's ready when downloading
 		go func(b string) {
-			manager.GetUA()
+			GetUserAgent(b)
 		}(browser)
 	}
 

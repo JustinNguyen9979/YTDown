@@ -43,9 +43,6 @@ type temporaryCookieState struct {
 	xhsCacheTime  time.Time // When the cache was last updated
 	xhsExtracting bool
 
-	cachedUA   string
-	fetchingUA bool
-
 	domainBrowserData map[string]*BrowserExportData
 }
 
@@ -92,117 +89,6 @@ func GetInstalledBrowsers() []string {
 	}
 	sort.Strings(available)
 	return available
-}
-
-// GetUA returns a dynamic User-Agent based on the selected browser's actual version
-func (m *CookieManager) GetUA() string {
-	m.mu.RLock()
-	browser := m.config.SelectedBrowser
-	m.mu.RUnlock()
-
-	if browser == "" {
-		// Default to Safari (pre-installed on every Mac) if none selected
-		browser = "safari"
-	}
-
-	m.state.mu.RLock()
-	cached := m.state.cachedUA
-	fetching := m.state.fetchingUA
-	m.state.mu.RUnlock()
-
-	if cached != "" {
-		return cached
-	}
-
-	if !fetching {
-		m.state.mu.Lock()
-		m.state.fetchingUA = true
-		m.state.mu.Unlock()
-
-		go func(b string) {
-			ua := m.fetchUAViaYTDLP(b)
-			m.state.mu.Lock()
-			if ua != "" {
-				m.state.cachedUA = ua
-			}
-			m.state.fetchingUA = false
-			m.state.mu.Unlock()
-		}(browser)
-	}
-
-	// Fallback to manual construction while yt-dlp is fetching
-	return m.getFallbackUA(browser)
-}
-
-func (m *CookieManager) fetchUAViaYTDLP(browser string) string {
-	ytdlp := getResourcePath("yt-dlp")
-	if ytdlp != "" {
-		cmd := exec.Command(ytdlp, "--cookies-from-browser", browser, "--print", "user_agent", "--terminate-on-connect", "https://www.google.com")
-		out, _ := cmd.Output()
-		if len(out) > 0 {
-			ua := strings.TrimSpace(string(out))
-			if ua != "" && !strings.HasPrefix(ua, "[") && strings.Contains(ua, "Mozilla") {
-				return ua
-			}
-		}
-	}
-	return ""
-}
-
-func (m *CookieManager) getFallbackUA(browser string) string {
-	osVersion := getMacOSVersion()
-	osVersionUA := strings.ReplaceAll(osVersion, ".", "_")
-	version := getBrowserVersionDynamic(browser)
-	if version == "" {
-		version = "17.0" // Generic fallback
-	}
-
-	switch strings.ToLower(browser) {
-	case "chrome":
-		return fmt.Sprintf("Mozilla/5.0 (Macintosh; Intel Mac OS X %s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Safari/537.36", osVersionUA, version)
-	case "firefox":
-		return fmt.Sprintf("Mozilla/5.0 (Macintosh; Intel Mac OS X %s; rv:%s) Gecko/20100101 Firefox/%s", osVersion, version, version)
-	case "safari":
-		return fmt.Sprintf("Mozilla/5.0 (Macintosh; Intel Mac OS X %s) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/%s Safari/605.1.15", osVersionUA, version)
-	case "edge":
-		return fmt.Sprintf("Mozilla/5.0 (Macintosh; Intel Mac OS X %s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Safari/537.36 Edg/%s", osVersionUA, version, version)
-	default:
-		// Generic WebKit based fallback
-		return fmt.Sprintf("Mozilla/5.0 (Macintosh; Intel Mac OS X %s) AppleWebKit/605.1.15 (KHTML, like Gecko) Chrome/%s Safari/537.36", osVersionUA, version)
-	}
-}
-
-func getBrowserVersionDynamic(id string) string {
-	paths := map[string]string{
-		"chrome":  "/Applications/Google Chrome.app/Contents/Info.plist",
-		"firefox": "/Applications/Firefox.app/Contents/Info.plist",
-		"safari":  "/Applications/Safari.app/Contents/Info.plist",
-		"edge":    "/Applications/Microsoft Edge.app/Contents/Info.plist",
-		"brave":   "/Applications/Brave Browser.app/Contents/Info.plist",
-		"opera":   "/Applications/Opera.app/Contents/Info.plist",
-		"vivaldi": "/Applications/Vivaldi.app/Contents/Info.plist",
-	}
-
-	plistPath, ok := paths[id]
-	if !ok {
-		return ""
-	}
-
-	cmd := exec.Command("defaults", "read", plistPath, "CFBundleShortVersionString")
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
-}
-
-func getMacOSVersion() string {
-	cmd := exec.Command("sw_vers", "-productVersion")
-	out, err := cmd.Output()
-	if err != nil {
-		return "10.15.7"
-	}
-	return strings.TrimSpace(string(out))
 }
 
 // Global cookie state manager
@@ -586,11 +472,11 @@ func (m *CookieManager) ExtractBrowserDataForDomain(ctx context.Context, browser
 		allCookies = append(allCookies, c)
 	}
 
-	ua := m.GetUA()
+	userAgent := GetUserAgent(browser)
 
 	data := &BrowserExportData{
 		BrowserName: browser,
-		UserAgent:   ua,
+		UserAgent:   userAgent,
 		WebSession:  xhsSession,
 		Cookies:     allCookies,
 		Headers:     make(map[string]string),
@@ -731,8 +617,12 @@ func (m *CookieManager) extractWebSessionFromBrowser(ctx context.Context, browse
 		return ""
 	}
 
+	m.mu.RLock()
+	selectedBrowser := m.config.SelectedBrowser
+	m.mu.RUnlock()
+
 	// Resolve URL first
-	resolvedURL := ResolveShortURL(url, m.GetUA())
+	resolvedURL := ResolveShortURL(url, GetUserAgent(selectedBrowser))
 
 	// Use the base domain for cookie extraction for Xiaohongshu
 	extractionURL := resolvedURL
@@ -952,10 +842,9 @@ func clearManualCookie() {
 	manager.state.cookies = nil
 	manager.state.xhsSession = ""
 	manager.state.xhsCacheTime = time.Time{}
-	manager.state.cachedUA = ""
-	manager.state.fetchingUA = false
 	manager.state.domainBrowserData = nil
 	manager.state.mu.Unlock()
+	ClearUserAgentCache()
 
 	manager.mu.Lock()
 	manager.config.Mode = CookieModeNone

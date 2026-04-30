@@ -27,27 +27,6 @@ type VideoInfo struct {
 	ID        string `json:"id"`
 }
 
-// getOSUserAgentString trả về chuỗi OS phù hợp với platform đang chạy
-func getOSUserAgentString() string {
-	if platformManager != nil {
-		switch platformManager.OSName() {
-		case "Windows":
-			return "Windows NT 10.0; Win64; x64"
-		case "Linux":
-			return "X11; Linux x86_64"
-		}
-	}
-	return "Macintosh; Intel Mac OS X 10_15_7" // fallback = macOS
-}
-
-// getDefaultUserAgent trả về Chrome UA đúng với OS hiện tại
-func getDefaultUserAgent() string {
-	return fmt.Sprintf(
-		"Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-		getOSUserAgentString(),
-	)
-}
-
 // ResolveShortURL follows redirects to find the final URL for short links
 func ResolveShortURL(url string, userAgent string) string {
 	// Only resolve links that are known to be shorteners
@@ -74,7 +53,7 @@ func ResolveShortURL(url string, userAgent string) string {
 	// Use the provided browser User-Agent
 	ua := userAgent
 	if ua == "" {
-		ua = getDefaultUserAgent()
+		ua = GetUserAgent("")
 	}
 
 	// Try GET instead of HEAD because some shorteners (like XHS) behave differently with HEAD
@@ -422,12 +401,15 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 	manager.mu.RUnlock()
 
 	if cookieMode != CookieModeBrowser {
-		userAgent := getDefaultUserAgent()
+		manager.mu.RLock()
+		selectedBrowser := manager.config.SelectedBrowser
+		manager.mu.RUnlock()
+
+		var userAgent string
 		if cookieMode == CookieModeManual {
-			// Manual cookie: dùng UA động từ GetUA() thay vì hardcode
-			if dynUA := manager.GetUA(); dynUA != "" {
-				userAgent = dynUA
-			}
+			userAgent = GetUserAgent(selectedBrowser)
+		} else {
+			userAgent = GetUserAgent("")
 		}
 		args = append(args, "--user-agent", userAgent)
 	}
@@ -437,37 +419,6 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 	}
 
 	return args
-}
-
-func getUserAgentForBrowser(browser string) string {
-	osStr := getOSUserAgentString() // ← dùng helper mới
-
-	switch strings.ToLower(browser) {
-	case "chrome", "google-chrome", "brave":
-		return fmt.Sprintf("Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36", osStr)
-
-	case "firefox":
-		// Firefox có format UA riêng, không dùng osStr
-		if platformManager != nil {
-			switch platformManager.OSName() {
-			case "Windows":
-				return "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
-			case "Linux":
-				return "Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0"
-			}
-		}
-		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:124.0) Gecko/20100101 Firefox/124.0"
-
-	case "safari":
-		// Safari chỉ có trên macOS → luôn dùng Mac UA
-		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
-
-	case "edge":
-		return fmt.Sprintf("Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0", osStr)
-
-	default:
-		return fmt.Sprintf("Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36", osStr)
-	}
 }
 
 // qualityToHeight converts quality string to pixel height
@@ -596,11 +547,10 @@ func downloadThumbnailAsBase64(ctx context.Context, thumbnailURL string, url str
 	// Determine if it's Xiaohongshu to apply specific headers
 	isXHS := IsXiaohongshu(url)
 
-	// Get settings from manager
-	ua := manager.GetUA()
-	if ua == "" {
-		ua = getDefaultUserAgent()
-	}
+	manager.mu.RLock()
+	selectedBrowser := manager.config.SelectedBrowser
+	manager.mu.RUnlock()
+	userAgent := GetUserAgent(selectedBrowser)
 
 	// Download thumbnail with timeout
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -610,7 +560,7 @@ func downloadThumbnailAsBase64(ctx context.Context, thumbnailURL string, url str
 	}
 
 	// Set Headers
-	req.Header.Set("User-Agent", ua)
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9,vi;q=0.8")
 	req.Header.Set("Cache-Control", "no-cache")

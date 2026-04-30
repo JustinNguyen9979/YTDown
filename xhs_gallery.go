@@ -121,15 +121,15 @@ func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, opti
 }
 
 func getXHSFetchOptions(ctx context.Context) xhsmodule.FetchOptions {
-	opts := xhsmodule.FetchOptions{
-		UserAgent:   manager.GetUA(),
-		ImageFormat: "best",
-		Timeout:     30 * time.Second,
-	}
-
 	manager.mu.RLock()
 	cfg := manager.config
 	manager.mu.RUnlock()
+
+	opts := xhsmodule.FetchOptions{
+		UserAgent:   GetUserAgent(cfg.SelectedBrowser),
+		ImageFormat: "best",
+		Timeout:     30 * time.Second,
+	}
 
 	switch cfg.Mode {
 	case CookieModeBrowser:

@@ -24,7 +24,11 @@ type GalleryInfo struct {
 // DownloadGalleryWithOpts downloads images using gallery-dl with custom options
 func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options GalleryDownloadOptions) error {
 	// Resolve short URLs before passing to gallery-dl
-	resolvedURL := ResolveShortURL(url, manager.GetUA())
+	manager.mu.RLock()
+	selectedBrowser := manager.config.SelectedBrowser
+	manager.mu.RUnlock()
+	userAgent := GetUserAgent(selectedBrowser)
+	resolvedURL := ResolveShortURL(url, userAgent)
 
 	if IsXiaohongshu(resolvedURL) {
 		return DownloadXiaohongshuGallery(ctx, index, resolvedURL, options)
@@ -46,7 +50,6 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 	}
 
 	// Get dynamic User-Agent from system
-	userAgent := manager.GetUA()
 	if userAgent != "" {
 		args = append(args, "-o", "http.user-agent="+userAgent)
 	}
