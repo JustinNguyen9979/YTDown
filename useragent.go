@@ -3,28 +3,28 @@ package main
 import (
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 )
 
-// ── Package-level UA cache (thay thế cachedUA/fetchingUA trong CookieManager) ──
+// ── Package-level UA cache ───────────────────────────────────────────────────
 
 var (
 	uaCacheMu  sync.RWMutex
-	uaCacheMap = map[string]string{} // browser → userAgent
+	uaCacheMap = map[string]string{}
 	uaFetching = map[string]bool{}
 )
 
 // GetUserAgent trả về UA tốt nhất cho browser + OS hiện tại.
-// Nếu browser == "", trả về Chrome UA mặc định cho OS hiện tại.
-// Trên macOS: thử fetch UA thực từ yt-dlp (async), trả về static fallback ngay lập tức.
-// Trên Windows/Linux: trả về static UA đúng OS ngay lập tức.
+// browser == "": trả về Chrome UA mặc định phù hợp OS.
+// macOS: fetch async UA thực từ yt-dlp, trả về static ngay lập tức.
+// Windows/Linux: dùng version thực đọc từ exe/binary, trả về ngay.
 func GetUserAgent(browser string) string {
 	if browser == "" {
 		return getDefaultUserAgent()
 	}
 
-	// Check cache
 	uaCacheMu.RLock()
 	if ua, ok := uaCacheMap[browser]; ok {
 		uaCacheMu.RUnlock()
@@ -33,24 +33,23 @@ func GetUserAgent(browser string) string {
 	fetching := uaFetching[browser]
 	uaCacheMu.RUnlock()
 
-	// Chỉ fetch dynamic UA trên macOS (yt-dlp + browser plist)
-	if !fetching && isMacOSPlatform() {
+	// macOS: fetch UA thực qua yt-dlp (async, không block)
+	if !fetching && runtime.GOOS == "darwin" {
 		uaCacheMu.Lock()
 		uaFetching[browser] = true
 		uaCacheMu.Unlock()
 
 		go func(b string) {
-			userAgent := fetchUAFromYTDLP(b)
+			ua := fetchUAFromYTDLP(b)
 			uaCacheMu.Lock()
-			if userAgent != "" {
-				uaCacheMap[b] = userAgent
+			if ua != "" {
+				uaCacheMap[b] = ua
 			}
 			uaFetching[b] = false
 			uaCacheMu.Unlock()
 		}(browser)
 	}
 
-	// Trả về static fallback ngay (không block)
 	return getUserAgentForBrowser(browser)
 }
 
@@ -62,30 +61,18 @@ func ClearUserAgentCache() {
 	uaCacheMu.Unlock()
 }
 
-// ── Các hàm nội bộ ──────────────────────────────────────────────────────────
+// ── Internal builders ────────────────────────────────────────────────────────
 
-// isMacOSPlatform kiểm tra OS hiện tại có phải macOS không
-func isMacOSPlatform() bool {
-	if platformManager != nil {
-		return platformManager.OSName() == "macOS"
-	}
-	return true // fallback khi test
-}
-
-// getOSUserAgentString trả về chuỗi OS phù hợp với platform đang chạy
 func getOSUserAgentString() string {
-	if platformManager != nil {
-		switch platformManager.OSName() {
-		case "Windows":
-			return "Windows NT 10.0; Win64; x64"
-		case "Linux":
-			return "X11; Linux x86_64"
-		}
+	switch runtime.GOOS {
+	case "windows":
+		return "Windows NT 10.0; Win64; x64"
+	case "linux":
+		return "X11; Linux x86_64"
 	}
 	return "Macintosh; Intel Mac OS X 10_15_7"
 }
 
-// getDefaultUserAgent trả về Chrome UA đúng với OS hiện tại (không browser-specific)
 func getDefaultUserAgent() string {
 	return fmt.Sprintf(
 		"Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
@@ -93,17 +80,13 @@ func getDefaultUserAgent() string {
 	)
 }
 
-// getUserAgentForBrowser trả về static UA cho browser + OS hiện tại.
-// Trên macOS: ưu tiên version thực từ .plist trước khi dùng fallback.
+// getUserAgentForBrowser trả về UA tốt nhất cho browser.
+// Ưu tiên version thực từ GetBrowserVersion() (cross-platform) → static fallback.
 func getUserAgentForBrowser(browser string) string {
-	// macOS: thử đọc version thực từ .plist
-	if isMacOSPlatform() {
-		if version := getBrowserVersionDynamic(browser); version != "" {
-			return buildMacOSUserAgent(browser, version)
-		}
+	if version := GetBrowserVersion(browser); version != "" {
+		return buildUserAgentWithVersion(browser, version)
 	}
 
-	// Cross-platform static fallback
 	osStr := getOSUserAgentString()
 	switch strings.ToLower(browser) {
 	case "chrome", "google-chrome", "brave":
@@ -112,17 +95,14 @@ func getUserAgentForBrowser(browser string) string {
 			osStr,
 		)
 	case "firefox":
-		if platformManager != nil {
-			switch platformManager.OSName() {
-			case "Windows":
-				return "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
-			case "Linux":
-				return "Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0"
-			}
+		switch runtime.GOOS {
+		case "windows":
+			return "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
+		case "linux":
+			return "Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0"
 		}
 		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:124.0) Gecko/20100101 Firefox/124.0"
 	case "safari":
-		// Safari chỉ tồn tại trên macOS → luôn dùng Mac UA
 		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
 	case "edge":
 		return fmt.Sprintf(
@@ -134,90 +114,128 @@ func getUserAgentForBrowser(browser string) string {
 	}
 }
 
-// buildMacOSUserAgent tạo UA string cho macOS với version thực của browser
+// buildUserAgentWithVersion tạo UA string với version thực — cross-platform.
+func buildUserAgentWithVersion(browser, version string) string {
+	switch runtime.GOOS {
+	case "darwin":
+		return buildMacOSUserAgent(browser, version)
+	case "windows":
+		return buildWindowsUserAgent(browser, version)
+	case "linux":
+		return buildLinuxUserAgent(browser, version)
+	}
+	return getDefaultUserAgent()
+}
+
 func buildMacOSUserAgent(browser, version string) string {
-	osVersion := getMacOSVersion()
-	osVersionUA := strings.ReplaceAll(osVersion, ".", "_")
+	osVer := getMacOSVersion()
+	osVerUA := strings.ReplaceAll(osVer, ".", "_")
 	switch strings.ToLower(browser) {
 	case "chrome", "brave":
 		return fmt.Sprintf(
 			"Mozilla/5.0 (Macintosh; Intel Mac OS X %s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Safari/537.36",
-			osVersionUA, version,
+			osVerUA, version,
 		)
 	case "firefox":
 		return fmt.Sprintf(
 			"Mozilla/5.0 (Macintosh; Intel Mac OS X %s; rv:%s) Gecko/20100101 Firefox/%s",
-			osVersion, version, version,
+			osVer, version, version,
 		)
 	case "safari":
 		return fmt.Sprintf(
 			"Mozilla/5.0 (Macintosh; Intel Mac OS X %s) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/%s Safari/605.1.15",
-			osVersionUA, version,
+			osVerUA, version,
 		)
 	case "edge":
 		return fmt.Sprintf(
 			"Mozilla/5.0 (Macintosh; Intel Mac OS X %s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Safari/537.36 Edg/%s",
-			osVersionUA, version, version,
+			osVerUA, version, version,
 		)
 	default:
 		return fmt.Sprintf(
-			"Mozilla/5.0 (Macintosh; Intel Mac OS X %s) AppleWebKit/605.1.15 (KHTML, like Gecko) Chrome/%s Safari/537.36",
-			osVersionUA, version,
+			"Mozilla/5.0 (Macintosh; Intel Mac OS X %s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Safari/537.36",
+			osVerUA, version,
 		)
 	}
 }
 
-// getMacOSVersion đọc version macOS hiện tại (macOS only)
+func buildWindowsUserAgent(browser, version string) string {
+	const osStr = "Windows NT 10.0; Win64; x64"
+	switch strings.ToLower(browser) {
+	case "chrome", "brave":
+		return fmt.Sprintf(
+			"Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Safari/537.36",
+			osStr, version,
+		)
+	case "firefox":
+		return fmt.Sprintf(
+			"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:%s) Gecko/20100101 Firefox/%s",
+			version, version,
+		)
+	case "edge":
+		return fmt.Sprintf(
+			"Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Safari/537.36 Edg/%s",
+			osStr, version, version,
+		)
+	default:
+		return fmt.Sprintf(
+			"Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Safari/537.36",
+			osStr, version,
+		)
+	}
+}
+
+func buildLinuxUserAgent(browser, version string) string {
+	const osStr = "X11; Linux x86_64"
+	switch strings.ToLower(browser) {
+	case "chrome", "brave":
+		return fmt.Sprintf(
+			"Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Safari/537.36",
+			osStr, version,
+		)
+	case "firefox":
+		return fmt.Sprintf(
+			"Mozilla/5.0 (X11; Linux x86_64; rv:%s) Gecko/20100101 Firefox/%s",
+			version, version,
+		)
+	case "edge":
+		return fmt.Sprintf(
+			"Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Safari/537.36 Edg/%s",
+			osStr, version, version,
+		)
+	default:
+		return fmt.Sprintf(
+			"Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Safari/537.36",
+			osStr, version,
+		)
+	}
+}
+
 func getMacOSVersion() string {
-	cmd := exec.Command("sw_vers", "-productVersion")
-	out, err := cmd.Output()
+	out, err := exec.Command("sw_vers", "-productVersion").Output()
 	if err != nil {
 		return "10.15.7"
 	}
 	return strings.TrimSpace(string(out))
 }
 
-// getBrowserVersionDynamic đọc version browser từ .plist (macOS only)
-func getBrowserVersionDynamic(id string) string {
-	paths := map[string]string{
-		"chrome":  "/Applications/Google Chrome.app/Contents/Info.plist",
-		"firefox": "/Applications/Firefox.app/Contents/Info.plist",
-		"safari":  "/Applications/Safari.app/Contents/Info.plist",
-		"edge":    "/Applications/Microsoft Edge.app/Contents/Info.plist",
-		"brave":   "/Applications/Brave Browser.app/Contents/Info.plist",
-		"opera":   "/Applications/Opera.app/Contents/Info.plist",
-		"vivaldi": "/Applications/Vivaldi.app/Contents/Info.plist",
-	}
-	plistPath, ok := paths[id]
-	if !ok {
-		return ""
-	}
-	cmd := exec.Command("defaults", "read", plistPath, "CFBundleShortVersionString")
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
-}
-
-// fetchUAFromYTDLP lấy UA thực của browser qua yt-dlp (macOS only, chạy async)
 func fetchUAFromYTDLP(browser string) string {
 	ytdlp := getResourcePath("yt-dlp")
 	if ytdlp == "" {
 		return ""
 	}
-	cmd := exec.Command(ytdlp,
+	out, err := exec.Command(ytdlp,
 		"--cookies-from-browser", browser,
 		"--print", "user_agent",
 		"--terminate-on-connect",
 		"https://www.google.com",
-	)
-	out, _ := cmd.Output()
-	if len(out) > 0 {
-		userAgent := strings.TrimSpace(string(out))
-		if userAgent != "" && !strings.HasPrefix(userAgent, "[") && strings.Contains(userAgent, "Mozilla") {
-			return userAgent
-		}
+	).Output()
+	if err != nil || len(out) == 0 {
+		return ""
 	}
-	return ""
+	ua := strings.TrimSpace(string(out))
+	if ua == "" || strings.HasPrefix(ua, "[") || !strings.Contains(ua, "Mozilla") {
+		return ""
+	}
+	return ua
 }

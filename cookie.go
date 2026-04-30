@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -62,33 +61,6 @@ type BrowserExportData struct {
 	Cookies     []parsedCookie    `json:"cookies"`
 	Headers     map[string]string `json:"headers,omitempty"`
 	ExportTime  time.Time         `json:"-"`
-}
-
-// GetInstalledBrowsers returns IDs of supported browsers actually installed on the system
-func GetInstalledBrowsers() []string {
-	var available []string
-
-	// macOS common browsers to check
-	checkList := map[string]struct {
-		bundleID string
-		appPath  string
-	}{
-		"chrome":  {"com.google.Chrome", "/Applications/Google Chrome.app"},
-		"firefox": {"org.mozilla.firefox", "/Applications/Firefox.app"},
-		"safari":  {"com.apple.Safari", "/Applications/Safari.app"},
-		"edge":    {"com.microsoft.edgemac", "/Applications/Microsoft Edge.app"},
-		"brave":   {"com.brave.Browser", "/Applications/Brave Browser.app"},
-		"opera":   {"com.operasoftware.Opera", "/Applications/Opera.app"},
-		"vivaldi": {"com.vivaldi.Vivaldi", "/Applications/Vivaldi.app"},
-	}
-
-	for id, info := range checkList {
-		if _, err := os.Stat(info.appPath); err == nil {
-			available = append(available, id)
-		}
-	}
-	sort.Strings(available)
-	return available
 }
 
 // Global cookie state manager
