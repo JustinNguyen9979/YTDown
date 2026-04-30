@@ -152,11 +152,8 @@ echo "Done! Closing in 3s..."; sleep 3`
 	return fmt.Errorf("no terminal emulator found — run setup manually: bash %s", scriptPath)
 }
 
-// GetLatestVersion trả về version mới nhất có trong apt repo.
-// Dùng apt-cache policy thay vì GitHub API — không cần internet ngoài.
 func (m *Manager) GetLatestVersion(name string) string {
 	if m.pm != "apt" {
-		// Distro khác: không hỗ trợ auto check
 		return ""
 	}
 	out, err := exec.Command("apt-cache", "policy", name).Output()
@@ -169,6 +166,11 @@ func (m *Manager) GetLatestVersion(name string) string {
 			v := strings.TrimSpace(strings.TrimPrefix(line, "Candidate:"))
 			if v == "(none)" || v == "" {
 				return ""
+			}
+			// ✅ Strip Debian revision suffix: "2026.3.17-1" → "2026.3.17"
+			// Debian format: <upstream_version>-<debian_revision>
+			if idx := strings.LastIndex(v, "-"); idx != -1 {
+				v = v[:idx]
 			}
 			return v
 		}
