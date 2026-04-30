@@ -1,7 +1,32 @@
-Origin: YTDown
-Label: YTDown
-Suite: stable
-Codename: stable
 Architectures: amd64 arm64
+Codename: stable
 Components: main
+Date: Thu, 30 Apr 2026 03:51:56 +0000
 Description: YTDown APT Repository
+Label: YTDown
+Origin: YTDown
+Suite: stable
+MD5Sum:
+ 5868c72836c3d8b7ffbaffda8f28dd4d              177 Release
+ 32235151f2d522fcbad62401bb61b962              633 main/binary-amd64/Packages
+ f38064480643a845b78ddfdfe620c824              497 main/binary-amd64/Packages.gz
+ cb07508fca99ca9f2549f6cd8f15441b              633 main/binary-arm64/Packages
+ efc53388784e09b3aefb313f9a8c927a              495 main/binary-arm64/Packages.gz
+SHA1:
+ 3c2983e6b1cec3656b229e42f675fe6efcf2a0fe              177 Release
+ af1a22e0a53f9140d170b00dd8e6ed6b1e19b99d              633 main/binary-amd64/Packages
+ 9e6952b57c701554b5bf9a40376436575bdd6b06              497 main/binary-amd64/Packages.gz
+ 0e7f9863f045140ef33479537d3fd3be24d686a8              633 main/binary-arm64/Packages
+ 9cab56249fd3ea1866e505d2fe5af8d774fc2d4e              495 main/binary-arm64/Packages.gz
+SHA256:
+ 94949e1170c5f5e17d1a35014cc6d8a92ef6504430f4594ed9b570bed7c1b914              177 Release
+ c1b2d237ccacf4f8c5c7ea04cf3988653282f04344ac189d0babb0de8ebee295              633 main/binary-amd64/Packages
+ 8780f9b9122a97992646788b4566895b76beb7cd11d72fce82bcc4067f75142f              497 main/binary-amd64/Packages.gz
+ 6ec5a6480b4fdf7db8e089141a35d07071e3956ad6046705dbb26323920a1cc3              633 main/binary-arm64/Packages
+ d8407d7ebb04826ec7386df3229c0d9178d70fbebba5a879a14f5fca36562e52              495 main/binary-arm64/Packages.gz
+SHA512:
+ dee6d128bfa8697b59dc2c344c5330d00979e4e4c62132756513f6ab342a194473ae7e841870891bf5c59c68ecd937d436e1174ebaf6ae02f82c4b98cff02df0              177 Release
+ 9ce8aebe1a002e7f7a4d3509907ec7412eea9b8ccf3fb9a568102dc9bdf6c7a74ed5759efb0743c5080aede589d993dda9015d50026843be69019e186faa84ca              633 main/binary-amd64/Packages
+ 92daed0c60b2e4169b53ff28e008de44c94b4ee8018dc37d50eb875584f83475cc490ab0512355223e8a9ab7091ae88cb278571fc4fdbf421d4b884285218aff              497 main/binary-amd64/Packages.gz
+ e175ef598f584761c8ef42363d96565e238b3f64d7c20a67dfa02381e3deb12f5b74026c800bd19fedd226e3c4486e55ea933c695fcba71a90c8708581498c44              633 main/binary-arm64/Packages
+ 8a9e5c8080030aa60dc43175c5b31a02f5ba02d0c81e5305c163c4d70f3acfb5d4998233c2fe5e71035487d9de8001a486f1e1aaea667c86d24edc78d268e87e              495 main/binary-arm64/Packages.gz
