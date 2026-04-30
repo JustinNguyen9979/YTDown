@@ -27,6 +27,27 @@ type VideoInfo struct {
 	ID        string `json:"id"`
 }
 
+// getOSUserAgentString trả về chuỗi OS phù hợp với platform đang chạy
+func getOSUserAgentString() string {
+	if platformManager != nil {
+		switch platformManager.OSName() {
+		case "Windows":
+			return "Windows NT 10.0; Win64; x64"
+		case "Linux":
+			return "X11; Linux x86_64"
+		}
+	}
+	return "Macintosh; Intel Mac OS X 10_15_7" // fallback = macOS
+}
+
+// getDefaultUserAgent trả về Chrome UA đúng với OS hiện tại
+func getDefaultUserAgent() string {
+	return fmt.Sprintf(
+		"Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+		getOSUserAgentString(),
+	)
+}
+
 // ResolveShortURL follows redirects to find the final URL for short links
 func ResolveShortURL(url string, userAgent string) string {
 	// Only resolve links that are known to be shorteners
@@ -53,7 +74,7 @@ func ResolveShortURL(url string, userAgent string) string {
 	// Use the provided browser User-Agent
 	ua := userAgent
 	if ua == "" {
-		ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+		ua = getDefaultUserAgent()
 	}
 
 	// Try GET instead of HEAD because some shorteners (like XHS) behave differently with HEAD
@@ -122,12 +143,7 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 	cmd := exec.CommandContext(ctx, ytdlpPath, args...)
 
 	// Ensure /opt/homebrew/bin and other common paths are in PATH so yt-dlp can find ffmpeg, deno, etc.
-	existingPath := os.Getenv("PATH")
-	newPath := "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-	if existingPath != "" {
-		newPath = existingPath + ":" + newPath
-	}
-	cmd.Env = append(os.Environ(), "PATH="+newPath)
+	cmd.Env = os.Environ()
 
 	// CombinedOutput is simpler but we need to stream progress,
 	// so we'll pipe stderr to stdout to avoid buffer deadlocks.
@@ -406,7 +422,7 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 	manager.mu.RUnlock()
 
 	if cookieMode != CookieModeBrowser {
-		userAgent := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+		userAgent := getDefaultUserAgent()
 		if cookieMode == CookieModeManual {
 			// Manual cookie: dùng UA động từ GetUA() thay vì hardcode
 			if dynUA := manager.GetUA(); dynUA != "" {
@@ -423,21 +439,34 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 	return args
 }
 
-// getUserAgentForBrowser returns a realistic User-Agent for common browsers
 func getUserAgentForBrowser(browser string) string {
+	osStr := getOSUserAgentString() // ← dùng helper mới
+
 	switch strings.ToLower(browser) {
-	case "chrome", "google-chrome":
-		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+	case "chrome", "google-chrome", "brave":
+		return fmt.Sprintf("Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36", osStr)
+
 	case "firefox":
+		// Firefox có format UA riêng, không dùng osStr
+		if platformManager != nil {
+			switch platformManager.OSName() {
+			case "Windows":
+				return "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
+			case "Linux":
+				return "Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0"
+			}
+		}
 		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:124.0) Gecko/20100101 Firefox/124.0"
+
 	case "safari":
+		// Safari chỉ có trên macOS → luôn dùng Mac UA
 		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+
 	case "edge":
-		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0"
-	case "brave":
-		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+		return fmt.Sprintf("Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0", osStr)
+
 	default:
-		return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+		return fmt.Sprintf("Mozilla/5.0 (%s) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36", osStr)
 	}
 }
 
@@ -570,7 +599,7 @@ func downloadThumbnailAsBase64(ctx context.Context, thumbnailURL string, url str
 	// Get settings from manager
 	ua := manager.GetUA()
 	if ua == "" {
-		ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+		ua = getDefaultUserAgent()
 	}
 
 	// Download thumbnail with timeout
@@ -699,21 +728,28 @@ func getResourcePath(name string) string {
 		return platformManager.GetBinaryPath(name)
 	}
 
-	// Fallback for tests or contexts where platformManager is not initialized
-	for _, p := range []string{
-		"/opt/homebrew/bin/" + name,
-		"/usr/local/bin/" + name,
-		"/usr/bin/" + name,
-	} {
+	// Fallback (tests): check các đường dẫn phổ biến
+	candidates := []string{
+		"/opt/homebrew/bin/" + name, // macOS (Apple Silicon)
+		"/usr/local/bin/" + name,    // macOS (Intel) / Linux
+		"/usr/bin/" + name,          // Linux
+	}
+
+	// ✅ Thêm mới: Windows check
+	if appData := os.Getenv("APPDATA"); appData != "" {
+		candidates = append(candidates,
+			filepath.Join(appData, "YTDown", "bin", name+".exe"),
+		)
+	}
+
+	for _, p := range candidates {
 		if info, err := os.Stat(p); err == nil && !info.IsDir() {
 			return p
 		}
 	}
-
 	if path, err := exec.LookPath(name); err == nil {
 		return path
 	}
-
 	return ""
 }
 
@@ -827,12 +863,20 @@ func SanitizeFilename(filename string) string {
 
 // OpenFileInFinder opens the file in Finder and highlights it
 func OpenFileInFinder(filePath string) error {
-	cmd := exec.Command("open", "-R", filePath)
-	return cmd.Run()
+	switch platformManager.OSName() {
+	case "macOS":
+		return exec.Command("open", "-R", filePath).Run() // reveal in Finder
+	default:
+		return platformManager.OpenFolder(filepath.Dir(filePath)) // Linux: xdg-open, Windows: explorer
+	}
 }
 
-// GetDefaultSavePath returns default download folder
 func GetDefaultSavePath() string {
+	// ✅ Dùng platformManager nếu có
+	if platformManager != nil {
+		return platformManager.GetDownloadDir()
+	}
+	// Fallback khi chạy tests (platformManager chưa khởi tạo)
 	usr, err := user.Current()
 	if err != nil {
 		return "~/Downloads"
