@@ -242,8 +242,9 @@ if (-not (Test-Path $ffmpeg)) {
 
 Write-Host ""
 Write-Host "Setup complete! All tools are ready in: $binDir"
-Write-Host "Closing in 3 seconds..."
-Start-Sleep 3
+Write-Host ""
+Write-Host "Press any key to close this window..."
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 `, m.binDir, ytdlpExeURL, galleryDLExeURL, ffmpegZipURL)
 
 	scriptPath := filepath.Join(os.TempDir(), "ytdown_setup.ps1")
@@ -254,14 +255,16 @@ Start-Sleep 3
 	cmd := exec.Command(
 		"powershell",
 		"-NoProfile",
-		"-WindowStyle", "Hidden", // chạy nền, không hiện cửa sổ
+		"-WindowStyle", "Normal",
 		"-ExecutionPolicy", "Bypass",
 		"-File", scriptPath,
 	)
-	if err := cmd.Run(); err != nil { // ← block đến khi xong
-		return fmt.Errorf("setup script failed: %w", err)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: false}
+
+	if err := cmd.Start(); err != nil { // ← Start() không block UI
+		return fmt.Errorf("cannot launch setup: %w", err)
 	}
-	m.InjectBinDir() // re-inject để đảm bảo PATH cập nhật
+
 	return nil
 }
 

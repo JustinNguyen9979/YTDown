@@ -2250,8 +2250,7 @@ function showDependencyWarning(missingTools) {
             const item = banner.querySelector('.update-item');
             if (item) {
                 item.innerHTML = `<span class="update-msg update-msg--success">
-                    ✅ Terminal đang cài đặt... Vui lòng nhập mật khẩu Mac nếu được yêu cầu.
-                    Khởi động lại app sau khi Terminal hoàn thành.
+                    ✅ Terminal đang cài đặt... Khởi động lại app sau khi Terminal hoàn thành.
                 </span>`;
             }
         } catch (err) {
