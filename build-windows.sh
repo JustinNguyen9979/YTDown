@@ -14,12 +14,10 @@ wails build -platform windows/amd64 -nsis -ldflags "-X main.Version=$VERSION"
 EXE_NAME="$APP-$VERSION-Windows-Setup.exe"
 ZIP_NAME="$APP-$VERSION-Windows-Setup.zip"
 
-cp "build/bin/$APP-amd64-installer.exe" "dist/$EXE_NAME"
+cp "build/bin/${APP}-amd64-installer.exe" "dist/$EXE_NAME"
 
-# Đóng gói .exe vào .zip cùng tên
-cd dist
-zip "$ZIP_NAME" "$EXE_NAME"
-cd ..
+# Dùng PowerShell thay vì zip (Windows runner không có zip command)
+powershell -Command "Compress-Archive -Path 'dist\\$EXE_NAME' -DestinationPath 'dist\\$ZIP_NAME' -Force"
 
 echo "✅ dist/$EXE_NAME"
 echo "✅ dist/$ZIP_NAME"
