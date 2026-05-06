@@ -79,12 +79,6 @@ func (m *Manager) CheckDependencies() ([]string, error) {
 	return missing, nil
 }
 
-var wingetIDs = map[string]string{
-	"yt-dlp":     "yt-dlp.yt-dlp",
-	"ffmpeg":     "Gyan.FFmpeg",
-	"gallery-dl": "mikf.gallery-dl",
-}
-
 func (m *Manager) InstallDependency(name string) error {
 	switch name {
 	case "yt-dlp":

@@ -340,20 +340,22 @@ func cleanAppCache() {
 		return
 	}
 
-	// Danh sách cache paths cần xóa (macOS + Linux)
 	cachePaths := []string{
-		// yt-dlp cache
+		// macOS — yt-dlp
 		filepath.Join(usr.HomeDir, ".cache", "yt-dlp"),
 		filepath.Join(usr.HomeDir, "Library", "Caches", "yt-dlp"),
-		// gallery-dl cache
+		// macOS — gallery-dl
 		filepath.Join(usr.HomeDir, ".cache", "gallery-dl"),
 		filepath.Join(usr.HomeDir, "Library", "Caches", "gallery-dl"),
-		// ytdown app temp folder
-		filepath.Join(os.TempDir(), "ytdown"),
-		// yt-dlp temp fragments (nếu download bị dở)
+		// Linux — yt-dlp / gallery-dl
+		filepath.Join(usr.HomeDir, ".local", "share", "yt-dlp"),
+		// ytdown logs
 		filepath.Join(usr.HomeDir, ".config", "ytdown", "logs"),
+		// temp fragments (download bị dở)
+		filepath.Join(os.TempDir(), "ytdown"),
 	}
 
+	// ✅ Windows cache paths
 	if appData := os.Getenv("APPDATA"); appData != "" {
 		cachePaths = append(cachePaths,
 			filepath.Join(appData, "yt-dlp", "cache"),
@@ -364,7 +366,6 @@ func cleanAppCache() {
 		cachePaths = append(cachePaths,
 			filepath.Join(localAppData, "yt-dlp"),
 			filepath.Join(localAppData, "gallery-dl"),
-			filepath.Join(os.TempDir(), "ytdown"),
 		)
 	}
 
