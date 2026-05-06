@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 const (
@@ -299,52 +300,58 @@ func (m *Manager) OpenFile(path string) error {
 }
 
 func (m *Manager) OSName() string            { return "Windows" }
-func (m *Manager) UpdateAssetSuffix() string { return "-Windows-Setup.exe" }
+func (m *Manager) UpdateAssetSuffix() string { return "-windows-setup.zip" }
 
-func (m *Manager) InstallAppUpdate(downloadURL string, parentPID int) error {
+func (p *Manager) InstallAppUpdate(downloadURL string, parentPID int) error {
 	tmpDir, err := os.MkdirTemp("", "ytdown-update-*")
 	if err != nil {
-		return fmt.Errorf("cannot create temp dir: %w", err)
+		return err
 	}
 
-	installerPath := filepath.Join(tmpDir, "YTDown-Setup.exe")
-	scriptPath := filepath.Join(tmpDir, "update.ps1")
+	zipName := filepath.Base(downloadURL) // VD: YTDown-2026.5.6.2-Windows-Setup.zip
+	// Tên .exe = thay .zip thành .exe
+	exeName := strings.TrimSuffix(zipName, ".zip") + ".exe"
 
-	script := fmt.Sprintf(`
-$parentPID = %d
-$url       = '%s'
-$installer = '%s'
+	zipPath := filepath.Join(tmpDir, zipName)
+	exePath := filepath.Join(tmpDir, exeName)
+
+	// Viết PowerShell script chạy ẩn (hidden window)
+	psScript := fmt.Sprintf(`
+$parentPid = %d
+$zipPath   = '%s'
+$exePath   = '%s'
+$tmpDir    = '%s'
 
 # Chờ app chính thoát
-while (Get-Process -Id $parentPID -ErrorAction SilentlyContinue) {
-    Start-Sleep -Milliseconds 500
-}
+while (Get-Process -Id $parentPid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 500 }
 
-# Download installer
-Write-Host "Downloading YTDown update..."
-Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+# Download .zip
+Invoke-WebRequest -Uri '%s' -OutFile $zipPath -UseBasicParsing
 
-# Chạy NSIS installer silent
-Write-Host "Installing..."
-Start-Process -FilePath $installer -ArgumentList '/S' -Wait
+# Giải nén
+Expand-Archive -Path $zipPath -DestinationPath $tmpDir -Force
+
+# Chạy installer silent (NSIS silent flag /S)
+Start-Process -FilePath $exePath -ArgumentList '/S' -Wait
 
 # Dọn dẹp
-Remove-Item -Recurse -Force '%s' -ErrorAction SilentlyContinue
-Write-Host "Update complete."
-`, parentPID, downloadURL, installerPath, tmpDir)
+Remove-Item -Path $tmpDir -Recurse -Force
+`, parentPID, zipPath, exePath, tmpDir, downloadURL)
 
-	if err := os.WriteFile(scriptPath, []byte(script), 0644); err != nil {
-		return fmt.Errorf("cannot write update script: %w", err)
+	scriptPath := filepath.Join(tmpDir, "update.ps1")
+	if err := os.WriteFile(scriptPath, []byte(psScript), 0o755); err != nil {
+		return err
 	}
 
-	// Chạy ẩn, không block app
-	return exec.Command(
-		"powershell",
-		"-NoProfile",
+	// Chạy PowerShell hoàn toàn ẩn - không hiện cửa sổ
+	cmd := exec.Command("powershell.exe",
 		"-WindowStyle", "Hidden",
+		"-NonInteractive",
 		"-ExecutionPolicy", "Bypass",
 		"-File", scriptPath,
-	).Start()
+	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	return cmd.Start() // Start() không Start() - không chờ, app tự quit sau đó
 }
 
 func (m *Manager) GetLatestVersion(name string) string {
