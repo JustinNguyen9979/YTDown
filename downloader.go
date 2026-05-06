@@ -685,21 +685,35 @@ func getResourcePath(name string) string {
 		"/usr/bin/" + name,          // Linux
 	}
 
-	// ✅ Thêm mới: Windows check
 	if appData := os.Getenv("APPDATA"); appData != "" {
 		candidates = append(candidates,
 			filepath.Join(appData, "YTDown", "bin", name+".exe"),
 		)
 	}
 
+	if userProfile := os.Getenv("USERPROFILE"); userProfile != "" {
+		candidates = append(candidates,
+			filepath.Join(userProfile, "scoop", "shims", name+".exe"),
+		)
+	}
+	candidates = append(candidates,
+		filepath.Join("C:\\ProgramData\\chocolatey\\bin", name+".exe"),
+	)
+
 	for _, p := range candidates {
 		if info, err := os.Stat(p); err == nil && !info.IsDir() {
 			return p
 		}
 	}
+
 	if path, err := exec.LookPath(name); err == nil {
 		return path
 	}
+
+	if path, err := exec.LookPath(name + ".exe"); err == nil {
+		return path
+	}
+
 	return ""
 }
 

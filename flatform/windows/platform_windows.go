@@ -1,7 +1,6 @@
 package windows
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 const (
@@ -20,8 +18,7 @@ const (
 )
 
 type Manager struct {
-	binDir     string // %APPDATA%\YTDown\bin — stores downloaded .exe
-	wingetPath string
+	binDir string // %APPDATA%\YTDown\bin — stores downloaded .exe
 }
 
 func New() *Manager {
@@ -32,9 +29,6 @@ func New() *Manager {
 	}
 	m := &Manager{
 		binDir: filepath.Join(appData, "YTDown", "bin"),
-	}
-	if p, err := exec.LookPath("winget"); err == nil {
-		m.wingetPath = p
 	}
 	os.MkdirAll(m.binDir, 0755)
 	return m
@@ -92,19 +86,6 @@ var wingetIDs = map[string]string{
 }
 
 func (m *Manager) InstallDependency(name string) error {
-	// Strategy 1: winget (adds to system PATH automatically)
-	if m.wingetPath != "" {
-		if id, ok := wingetIDs[name]; ok {
-			cmd := exec.Command(m.wingetPath, "install", "--id", id,
-				"--accept-package-agreements", "--accept-source-agreements", "--silent")
-			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-			if err := cmd.Run(); err == nil {
-				return nil
-			}
-		}
-	}
-	// Strategy 2: Direct .exe download to binDir
-	// (InjectBinDir ensures these are findable via LookPath)
 	switch name {
 	case "yt-dlp":
 		return m.downloadExe(ytdlpExeURL, "yt-dlp.exe")
@@ -165,75 +146,128 @@ func (m *Manager) downloadFFmpegZip() error {
 }
 
 func (m *Manager) InstallInstructions(tools []string) string {
-	method := "tải tự động"
-	if m.wingetPath != "" {
-		method = "winget"
-	}
 	return fmt.Sprintf(
-		"YTDown cần các công cụ sau:\n\n%s\n\nCài đặt tự động qua %s?",
-		strings.Join(tools, "\n"), method,
+		"YTDown cần các công cụ sau:\n\n%s\n\nTự động tải và cài đặt vào:\n%s\n\nĐồng ý?",
+		strings.Join(tools, "\n"), m.binDir,
 	)
 }
 
-func (m *Manager) PackageManagerName() string {
-	if m.wingetPath != "" {
-		return "winget"
-	}
-	return "direct download"
-}
+func (m *Manager) PackageManagerName() string { return "direct download" }
 
 func (m *Manager) PackageManagerAvailable() bool { return true }
 
 func (m *Manager) UpgradeTool(name, binaryPath string) error {
-	// Self-update
+	if binaryPath == "" {
+		return fmt.Errorf("%s not found, cannot upgrade", name)
+	}
+
+	var cmd *exec.Cmd
 	switch name {
 	case "yt-dlp":
-		if err := exec.Command(binaryPath, "-U").Run(); err == nil {
-			return nil
-		}
+		// -U = self-update, tự replace file exe hiện tại
+		cmd = exec.Command(binaryPath, "-U")
 	case "gallery-dl":
-		if err := exec.Command(binaryPath, "--update").Run(); err == nil {
-			return nil
-		}
+		// --update = self-update, hoạt động giống hệt macOS/Linux
+		cmd = exec.Command(binaryPath, "--update")
+	case "ffmpeg":
+		// ffmpeg không có self-update → re-download zip về binDir
+		return m.downloadFFmpegZip()
+	default:
+		return fmt.Errorf("no upgrade method for %s", name)
 	}
-	// winget upgrade
-	if m.wingetPath != "" {
-		if id, ok := wingetIDs[name]; ok {
-			if err := exec.Command(m.wingetPath, "upgrade", "--id", id, "--silent").Run(); err == nil {
-				return nil
-			}
-		}
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("upgrade %s: %w\n%s", name, err, strings.TrimSpace(string(out)))
 	}
-	// Re-download .exe
-	return m.InstallDependency(name)
+	return nil
 }
 
 func (m *Manager) LaunchSetup() error {
-	script := fmt.Sprintf(`# YTDown Windows Setup
+	script := fmt.Sprintf(`
+$ErrorActionPreference = 'Stop'
 $binDir = '%s'
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 
-function Download-Exe($url, $dest) {
-    Write-Host "Downloading $dest..."
-    Invoke-WebRequest -Uri $url -OutFile (Join-Path $binDir $dest) -UseBasicParsing
+function Download-File($url, $dest) {
+    Write-Host "Downloading $(Split-Path $dest -Leaf)..."
+    $tmp = $dest + '.tmp'
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
+        Move-Item -Force $tmp $dest
+        Write-Host "  OK: $dest"
+    } catch {
+        if (Test-Path $tmp) { Remove-Item $tmp -Force }
+        throw "Failed to download $url : $_"
+    }
 }
 
-# Try winget first
-if (Get-Command winget -ErrorAction SilentlyContinue) {
-    winget install --id yt-dlp.yt-dlp --accept-package-agreements --accept-source-agreements --silent
-    winget install --id Gyan.FFmpeg --accept-package-agreements --accept-source-agreements --silent
-    winget install --id mikf.gallery-dl --accept-package-agreements --accept-source-agreements --silent
+# ── yt-dlp ──────────────────────────────────────────────
+$ytdlp = Join-Path $binDir 'yt-dlp.exe'
+if (Test-Path $ytdlp) {
+    Write-Host "yt-dlp found, running self-update..."
+    & $ytdlp -U
 } else {
-    Download-Exe '%s' 'yt-dlp.exe'
-    Download-Exe '%s' 'gallery-dl.exe'
+    Download-File '%s' $ytdlp
 }
-Write-Host "Setup complete! Closing in 3s..."
-Start-Sleep 3`, m.binDir, ytdlpExeURL, galleryDLExeURL)
+
+# ── gallery-dl ───────────────────────────────────────────
+$gallerydl = Join-Path $binDir 'gallery-dl.exe'
+if (Test-Path $gallerydl) {
+    Write-Host "gallery-dl found, running self-update..."
+    & $gallerydl --update
+} else {
+    Download-File '%s' $gallerydl
+}
+
+# ── ffmpeg ───────────────────────────────────────────────
+$ffmpeg = Join-Path $binDir 'ffmpeg.exe'
+if (-not (Test-Path $ffmpeg)) {
+    Write-Host "Downloading ffmpeg (this may take a moment)..."
+    $zipPath = Join-Path $binDir '_ffmpeg.zip'
+    $extractDir = Join-Path $binDir '_ffmpeg_extracted'
+
+    Download-File '%s' $zipPath
+
+    Write-Host "Extracting ffmpeg..."
+    Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+
+    # Tìm và copy ffmpeg.exe + ffprobe.exe từ subdir bất kỳ
+    Get-ChildItem -Path $extractDir -Recurse -Include 'ffmpeg.exe','ffprobe.exe' | ForEach-Object {
+        $dest = Join-Path $binDir $_.Name
+        Copy-Item $_.FullName $dest -Force
+        Write-Host "  Extracted: $dest"
+    }
+
+    Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+    Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+} else {
+    Write-Host "ffmpeg already installed (no self-update available, skip)."
+}
+
+Write-Host ""
+Write-Host "Setup complete! All tools are ready in: $binDir"
+Write-Host "Closing in 3 seconds..."
+Start-Sleep 3
+`, m.binDir, ytdlpExeURL, galleryDLExeURL, ffmpegZipURL)
 
 	scriptPath := filepath.Join(os.TempDir(), "ytdown_setup.ps1")
-	os.WriteFile(scriptPath, []byte(script), 0644)
-	return exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-		"-File", scriptPath).Start()
+	if err := os.WriteFile(scriptPath, []byte(script), 0644); err != nil {
+		return fmt.Errorf("cannot write setup script: %w", err)
+	}
+
+	cmd := exec.Command(
+		"powershell",
+		"-NoProfile",
+		"-WindowStyle", "Hidden", // chạy nền, không hiện cửa sổ
+		"-ExecutionPolicy", "Bypass",
+		"-File", scriptPath,
+	)
+	if err := cmd.Run(); err != nil { // ← block đến khi xong
+		return fmt.Errorf("setup script failed: %w", err)
+	}
+	m.InjectBinDir() // re-inject để đảm bảo PATH cập nhật
+	return nil
 }
 
 func (m *Manager) GetDownloadDir() string {
@@ -291,25 +325,88 @@ Start-Process -FilePath $out -ArgumentList '/S' -Wait`,
 }
 
 func (m *Manager) GetLatestVersion(name string) string {
-	repos := map[string]string{
-		"yt-dlp":     "yt-dlp/yt-dlp",
-		"gallery-dl": "mikf/gallery-dl",
-	}
-	repo, ok := repos[name]
-	if !ok {
+	binaryPath := m.GetBinaryPath(name)
+	if binaryPath == "" {
 		return ""
 	}
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get("https://api.github.com/repos/" + repo + "/releases/latest")
-	if err != nil {
-		return ""
+
+	switch name {
+	case "yt-dlp":
+		// yt-dlp --update --dry-run không thực sự update
+		// Output khi đã latest: "yt-dlp is up to date (2025.04.30)"
+		// Output khi có bản mới: "Updating yt-dlp to 2025.05.01 ..."
+		out, err := exec.Command(binaryPath, "--update", "--dry-run").CombinedOutput()
+		if err != nil && len(out) == 0 {
+			return ""
+		}
+		return parseYtdlpUpdateVersion(string(out))
+
+	case "gallery-dl":
+		// gallery-dl --update --check không thực sự update
+		// Output: "gallery-dl 1.28.1 is up-to-date" hoặc "Updating to version 1.29.0"
+		out, err := exec.Command(binaryPath, "--update", "--check").CombinedOutput()
+		if err != nil && len(out) == 0 {
+			return ""
+		}
+		return parseGallerydlUpdateVersion(string(out))
 	}
-	defer resp.Body.Close()
-	var data struct {
-		TagName string `json:"tag_name"`
+	return ""
+}
+
+func parseYtdlpUpdateVersion(output string) string {
+	output = strings.TrimSpace(output)
+	// Trường hợp: "yt-dlp is up to date (2025.04.30)"
+	if idx := strings.Index(output, "("); idx != -1 {
+		if end := strings.Index(output[idx:], ")"); end != -1 {
+			ver := strings.TrimSpace(output[idx+1 : idx+end])
+			if isDateVersion(ver) {
+				return ver
+			}
+		}
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return ""
+	// Trường hợp: "Updating yt-dlp to 2025.05.01"
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		for i, f := range fields {
+			if (f == "to" || f == "version") && i+1 < len(fields) {
+				ver := strings.TrimRight(fields[i+1], ".,")
+				if isDateVersion(ver) {
+					return ver
+				}
+			}
+		}
 	}
-	return strings.TrimPrefix(data.TagName, "v")
+	return ""
+}
+
+func parseGallerydlUpdateVersion(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		for i, f := range fields {
+			if f == "version" && i+1 < len(fields) {
+				ver := strings.TrimRight(fields[i+1], ".,")
+				if isSemver(ver) {
+					return ver
+				}
+			}
+			// "gallery-dl 1.28.1 is up-to-date"
+			if f == "gallery-dl" && i+1 < len(fields) {
+				ver := strings.TrimRight(fields[i+1], ".,")
+				if isSemver(ver) {
+					return ver
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func isDateVersion(s string) bool {
+	parts := strings.Split(s, ".")
+	return len(parts) == 3 && len(parts[0]) == 4
+}
+
+func isSemver(s string) bool {
+	parts := strings.Split(s, ".")
+	return len(parts) >= 2
 }

@@ -258,7 +258,22 @@ func (a *App) UpgradeBinary(name string) error {
 
 // LaunchSetupTerminal: delegate sang platform
 func (a *App) LaunchSetupTerminal() error {
-	return a.pm.LaunchSetup()
+	go func() {
+		runtime.EventsEmit(a.ctx, "setup:started", nil)
+
+		if err := a.pm.LaunchSetup(); err != nil {
+			runtime.EventsEmit(a.ctx, "setup:error", map[string]string{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		// Re-check sau khi LaunchSetup() hoàn tất
+		result := a.CheckDependencies()
+		runtime.EventsEmit(a.ctx, "setup:complete", result)
+		LogInfo("[Setup] Setup complete. AllInstalled=%v", result.AllInstalled)
+	}()
+	return nil
 }
 
 // startup is called at application startup
@@ -337,6 +352,20 @@ func cleanAppCache() {
 		filepath.Join(os.TempDir(), "ytdown"),
 		// yt-dlp temp fragments (nếu download bị dở)
 		filepath.Join(usr.HomeDir, ".config", "ytdown", "logs"),
+	}
+
+	if appData := os.Getenv("APPDATA"); appData != "" {
+		cachePaths = append(cachePaths,
+			filepath.Join(appData, "yt-dlp", "cache"),
+			filepath.Join(appData, "gallery-dl", "cache"),
+		)
+	}
+	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+		cachePaths = append(cachePaths,
+			filepath.Join(localAppData, "yt-dlp"),
+			filepath.Join(localAppData, "gallery-dl"),
+			filepath.Join(os.TempDir(), "ytdown"),
+		)
 	}
 
 	for _, path := range cachePaths {

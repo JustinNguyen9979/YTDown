@@ -12,7 +12,7 @@ Chọn phiên bản phù hợp với hệ điều hành của bạn:
 
 [![Tải về cho Windows](https://img.shields.io/badge/Windows-Tải_về_.exe-0078d7?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/JustinNguyen9979/YTDown/releases)
 
-[![Tải về cho Linux](https://img.shields.io/badge/Linux-Tải_về_.AppImage-fca121?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/JustinNguyen9979/YTDown/releases)
+[![Tải về cho Linux](https://img.shields.io/badge/Linux-Tải_về_.deb-fca121?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/JustinNguyen9979/YTDown/releases)
 
 ### 🍺 Cài đặt qua Homebrew (Cho macOS)
 
