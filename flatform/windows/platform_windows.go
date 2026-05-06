@@ -308,20 +308,49 @@ func (m *Manager) OSName() string            { return "Windows" }
 func (m *Manager) UpdateAssetSuffix() string { return "-Windows-Setup.exe" }
 
 func (m *Manager) InstallAppUpdate(downloadURL string, parentPID int) error {
-	tmpDir, _ := os.MkdirTemp("", "ytdown-update-*")
-	installerPath := filepath.Join(tmpDir, "YTDown-Setup.exe")
-	script := fmt.Sprintf(`$pid = %d
-$url = '%s'
-$out = '%s'
-while (Get-Process -Id $pid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 500 }
-Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing
-Start-Process -FilePath $out -ArgumentList '/S' -Wait`,
-		parentPID, downloadURL, installerPath)
+	tmpDir, err := os.MkdirTemp("", "ytdown-update-*")
+	if err != nil {
+		return fmt.Errorf("cannot create temp dir: %w", err)
+	}
 
+	installerPath := filepath.Join(tmpDir, "YTDown-Setup.exe")
 	scriptPath := filepath.Join(tmpDir, "update.ps1")
-	os.WriteFile(scriptPath, []byte(script), 0644)
-	return exec.Command("powershell", "-NoProfile", "-WindowStyle", "Hidden",
-		"-ExecutionPolicy", "Bypass", "-File", scriptPath).Start()
+
+	script := fmt.Sprintf(`
+$parentPID = %d
+$url       = '%s'
+$installer = '%s'
+
+# Chờ app chính thoát
+while (Get-Process -Id $parentPID -ErrorAction SilentlyContinue) {
+    Start-Sleep -Milliseconds 500
+}
+
+# Download installer
+Write-Host "Downloading YTDown update..."
+Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+
+# Chạy NSIS installer silent
+Write-Host "Installing..."
+Start-Process -FilePath $installer -ArgumentList '/S' -Wait
+
+# Dọn dẹp
+Remove-Item -Recurse -Force '%s' -ErrorAction SilentlyContinue
+Write-Host "Update complete."
+`, parentPID, downloadURL, installerPath, tmpDir)
+
+	if err := os.WriteFile(scriptPath, []byte(script), 0644); err != nil {
+		return fmt.Errorf("cannot write update script: %w", err)
+	}
+
+	// Chạy ẩn, không block app
+	return exec.Command(
+		"powershell",
+		"-NoProfile",
+		"-WindowStyle", "Hidden",
+		"-ExecutionPolicy", "Bypass",
+		"-File", scriptPath,
+	).Start()
 }
 
 func (m *Manager) GetLatestVersion(name string) string {

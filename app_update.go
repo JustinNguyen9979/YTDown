@@ -68,13 +68,17 @@ func (a *App) GetAppUpdateInfo() AppUpdateInfo {
 	return info
 }
 
+// app_update.go — thay thế toàn bộ hàm InstallAppUpdate()
 func (a *App) InstallAppUpdate() error {
 	info := a.GetAppUpdateInfo()
 	if !info.Available {
 		return fmt.Errorf("no newer update available")
 	}
 
-	if a.pm.OSName() == "Linux" {
+	osName := a.pm.OSName()
+
+	// Linux: dùng APT / AppImage
+	if osName == "Linux" {
 		if err := a.pm.InstallAppUpdate("", os.Getpid()); err != nil {
 			return err
 		}
@@ -86,14 +90,21 @@ func (a *App) InstallAppUpdate() error {
 		return nil
 	}
 
-	// macOS: Tải DMG, gắn vào, copy app ra, rồi mở app mới
+	// macOS và Windows: đều cần download asset
 	if info.DownloadURL == "" {
-		return fmt.Errorf("no release asset found for %s", a.pm.OSName())
+		return fmt.Errorf("no release asset found for %s (suffix: %s)", osName, a.pm.UpdateAssetSuffix())
 	}
+
 	if err := a.pm.InstallAppUpdate(info.DownloadURL, os.Getpid()); err != nil {
 		return err
 	}
-	runtime.EventsEmit(a.ctx, "app-update-started", map[string]interface{}{"version": info.Latest})
+
+	runtime.EventsEmit(a.ctx, "app-update-started", map[string]interface{}{
+		"version": info.Latest,
+		"os":      osName,
+	})
+
+	// Quit app để updater script chạy
 	go func() {
 		time.Sleep(300 * time.Millisecond)
 		runtime.Quit(a.ctx)

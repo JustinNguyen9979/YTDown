@@ -1,0 +1,28 @@
+name: Publish Windows Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  verify-windows-asset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Windows Setup.exe exists in release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          assets=$(gh release view "$TAG" --repo JustinNguyen9979/YTDown --json assets -q '.assets[].name')
+          echo "Release assets: $assets"
+          if echo "$assets" | grep -q "Windows-Setup.exe"; then
+            echo "✅ Windows installer found in release"
+          else
+            echo "❌ Windows-Setup.exe missing from release!"
+            exit 1
+          fi
+
+      - name: Generate winget manifest (optional, future)
+        run: |
+          echo "Windows release verified: ${{ github.event.release.tag_name }}"
+        
