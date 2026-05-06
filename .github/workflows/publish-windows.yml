@@ -15,12 +15,12 @@ jobs:
         run: |
           assets=$(gh release view "$TAG" --repo JustinNguyen9979/YTDown --json assets -q '.assets[].name')
           echo "Release assets: $assets"
-          if echo "$assets" | grep -q "Windows-Setup.exe"; then
-            echo "✅ Windows installer found in release"
-          else
-            echo "❌ Windows-Setup.exe missing from release!"
+          if echo "$assets" | grep -q "Windows-Setup.zip"; then
+            echo "✅ Windows zip found in release"
+            else
+            echo "❌ Windows-Setup.zip missing from release!"
             exit 1
-          fi
+            fi
 
       - name: Generate winget manifest (optional, future)
         run: |

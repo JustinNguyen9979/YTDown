@@ -50,7 +50,7 @@ jobs:
           - os: windows-latest
             platform: windows
             build_script: bash build-windows.sh
-            artifact_pattern: dist/*.exe
+            artifact_pattern: dist/*.zip
             artifact_name: ytdown-windows
             name: Windows
 
