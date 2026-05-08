@@ -2,8 +2,6 @@ package windows
 
 import (
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -106,12 +104,12 @@ func (m *Manager) UpgradeTool(name, binaryPath string) error {
 		return fmt.Errorf("no winget ID for %s", name)
 	}
 
-	// Run winget upgrade in a hidden window if it's a silent upgrade, 
+	// Run winget upgrade in a hidden window if it's a silent upgrade,
 	// but since we want transparency, we could also use LaunchSetup style.
 	// For now, let's use a hidden command for background upgrades if requested.
 	cmd := exec.Command("winget", "upgrade", "--id", wingetID, "--silent", "--accept-source-agreements", "--accept-package-agreements")
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	
+
 	return cmd.Run()
 }
 
