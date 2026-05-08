@@ -90,12 +90,11 @@ func (a *App) InstallAppUpdate() error {
 		return nil
 	}
 
-	// macOS: cần download asset
-	// Windows: dùng Winget (không bắt buộc download URL từ GitHub)
+	// Chỉ check DownloadURL cho macOS, không check cho Windows
 	if osName == "macOS" && info.DownloadURL == "" {
-		return fmt.Errorf("no release asset found for macOS (suffix: %s)", a.pm.UpdateAssetSuffix())
+		return fmt.Errorf("no release asset found for macOS")
 	}
-
+	// Windows: InstallAppUpdate dùng Winget, không cần downloadURL
 	if err := a.pm.InstallAppUpdate(info.DownloadURL, os.Getpid()); err != nil {
 		return err
 	}

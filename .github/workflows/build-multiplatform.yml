@@ -221,18 +221,17 @@ jobs:
           dpkg-scanpackages --arch arm64 pool/main > dists/stable/main/binary-arm64/Packages
           gzip -k dists/stable/main/binary-arm64/Packages
 
-          # ✅ Tạo config cho apt-ftparchive TRƯỚC
-          cat > /tmp/apt-ftparchive.conf << 'EOF'
-          APT::FTPArchive::Release {
-            Origin "YTDown";
-            Label "YTDown";
-            Suite "stable";
-            Codename "stable";
-            Architectures "amd64 arm64";
-            Components "main";
-            Description "YTDown APT Repository";
-          };
-          EOF
+              tee /tmp/apt-ftparchive.conf > /dev/null << 'CONF'
+              APT::FTPArchive::Release {
+                Origin "YTDown";
+                Label "YTDown";
+                Suite "stable";
+                Codename "stable";
+                Architectures "amd64 arm64";
+                Components "main";
+                Description "YTDown APT Repository";
+              };
+              CONF
 
           # ✅ Chỉ dùng apt-ftparchive, KHÔNG dùng cat > để ghi đè
               apt-ftparchive -c /tmp/apt-ftparchive.conf release dists/stable > dists/stable/Release

@@ -9,7 +9,7 @@ fi
 echo "🔨 Building $APP $VERSION for Windows..."
 mkdir -p dist
 
-wails build -platform windows/amd64 -nsis -ldflags "-X main.Version=$VERSION"
+wails build -platform windows/amd64 -nsis -ldflags "-s -w -X main.Version=$VERSION"
 
 EXE_NAME="$APP-$VERSION-Windows-Setup.exe"
 ZIP_NAME="$APP-$VERSION-Windows-Setup.zip"
