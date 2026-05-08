@@ -90,9 +90,10 @@ func (a *App) InstallAppUpdate() error {
 		return nil
 	}
 
-	// macOS và Windows: đều cần download asset
-	if info.DownloadURL == "" {
-		return fmt.Errorf("no release asset found for %s (suffix: %s)", osName, a.pm.UpdateAssetSuffix())
+	// macOS: cần download asset
+	// Windows: dùng Winget (không bắt buộc download URL từ GitHub)
+	if osName == "macOS" && info.DownloadURL == "" {
+		return fmt.Errorf("no release asset found for macOS (suffix: %s)", a.pm.UpdateAssetSuffix())
 	}
 
 	if err := a.pm.InstallAppUpdate(info.DownloadURL, os.Getpid()); err != nil {

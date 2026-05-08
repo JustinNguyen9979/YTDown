@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.6.0.schema.json
+
+PackageIdentifier: JustinNguyen.YTDown
+PackageVersion: <VERSION>
+PackageLocale: en-US
+Publisher: Justin Nguyen
+PackageName: YTDown
+License: MIT
+ShortDescription: A powerful video and gallery downloader for various platforms.
+Tags:
+  - youtube
+  - downloader
+  - video
+  - gallery-dl
+  - yt-dlp
+ManifestType: locale
+ManifestVersion: 1.6.0

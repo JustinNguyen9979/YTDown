@@ -50,7 +50,7 @@ jobs:
           - os: windows-latest
             platform: windows
             build_script: bash build-windows.sh
-            artifact_pattern: dist/*.zip
+            artifact_pattern: dist/*
             artifact_name: ytdown-windows
             name: Windows
 
@@ -235,12 +235,62 @@ jobs:
           EOF
 
           # ✅ Chỉ dùng apt-ftparchive, KHÔNG dùng cat > để ghi đè
-          apt-ftparchive -c /tmp/apt-ftparchive.conf release dists/stable > dists/stable/Release
+              apt-ftparchive -c /tmp/apt-ftparchive.conf release dists/stable > dists/stable/Release
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: apt-repo
-          destination_dir: apt
-          keep_files: false
+          - name: Deploy to GitHub Pages
+            uses: peaceiris/actions-gh-pages@v4
+            with:
+              github_token: ${{ secrets.GITHUB_TOKEN }}
+              publish_dir: apt-repo
+              destination_dir: apt
+              keep_files: false
+
+          update-winget-manifests:
+          needs: release
+          runs-on: ubuntu-latest
+          if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+          steps:
+          - uses: actions/checkout@v4
+            with:
+              fetch-depth: 0
+
+          - name: Download Windows artifact
+            uses: actions/download-artifact@v4
+            with:
+              name: ytdown-windows
+              path: dist
+
+          - name: Update Winget Manifests
+            run: |
+              VERSION=${{ needs.release.outputs.version }}
+              EXE_FILE=$(ls dist/*.exe | head -n 1)
+              SHA256=$(sha256sum "$EXE_FILE" | awk '{print $1}')
+              EXE_NAME=$(basename "$EXE_FILE")
+              INSTALLER_URL="https://github.com/JustinNguyen9979/YTDown/releases/download/$VERSION/$EXE_NAME"
+
+              echo "Updating Winget manifests to version $VERSION with SHA256 $SHA256"
+
+              # Update Version in all 3 files
+              sed -i "s/PackageVersion: .*/PackageVersion: $VERSION/" winget/*.yaml
+
+              # Update Installer specific fields
+              sed -i "s|InstallerUrl: .*|InstallerUrl: $INSTALLER_URL|" winget/JustinNguyen.YTDown.installer.yaml
+              sed -i "s/InstallerSha256: .*/InstallerSha256: $SHA256/" winget/JustinNguyen.YTDown.installer.yaml
+
+              git config user.email "actions@github.com"
+              git config user.name "GitHub Action"
+              git add winget/*.yaml
+              git commit -m "Update winget manifests to $VERSION [skip ci]" || echo "No changes to commit"
+              git push
+
+              submit-to-winget:
+              needs: update-winget-manifests
+              runs-on: ubuntu-latest
+              if: startsWith(github.ref, 'refs/tags/')
+              steps:
+              - name: Submit to Winget
+              uses: vedantmgoyal2002/winget-releaser@v2
+              with:
+              identifier: JustinNguyen.YTDown
+              installers-regex: '\.exe$' # Chỉ lấy file .exe làm bộ cài
+              token: ${{ secrets.WINGET_TOKEN }}

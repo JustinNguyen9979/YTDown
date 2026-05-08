@@ -12,14 +12,16 @@ import (
 )
 
 const (
-	ytdlpExeURL     = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
-	galleryDLExeURL = "https://github.com/mikf/gallery-dl/releases/latest/download/gallery-dl.exe"
-	// ffmpeg: BtbN static build (winget package Gyan.FFmpeg)
-	ffmpegZipURL = "https://github.com/BtbN/ffmpeg-builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip"
+	// Winget IDs for required tools
+	ytdlpID     = "yt-dlp.yt-dlp"
+	ffmpegID    = "Gyan.FFmpeg"
+	gallerydlID = "mikf.gallery-dl"
+	// App Winget ID
+	appWingetID = "JustinNguyen.YTDown"
 )
 
 type Manager struct {
-	binDir string // %APPDATA%\YTDown\bin — stores downloaded .exe
+	binDir string // legacy path, still kept for InjectBinDir compatibility if needed
 }
 
 func New() *Manager {
@@ -36,9 +38,8 @@ func New() *Manager {
 }
 
 // InjectBinDir prepends our managed bin dir into the process PATH.
-// After this, exec.LookPath("yt-dlp") works in downloader.go, gallery.go, etc.
-// No changes needed in those files at all.
 func (m *Manager) InjectBinDir() {
+	// Winget installs tools to system PATH, so we just ensure m.binDir is also there for legacy reasons.
 	current := os.Getenv("PATH")
 	if !strings.Contains(current, m.binDir) {
 		os.Setenv("PATH", m.binDir+";"+current)
@@ -50,20 +51,9 @@ func (m *Manager) GetBinaryPath(tool string) string {
 	if !strings.HasSuffix(toolExe, ".exe") {
 		toolExe += ".exe"
 	}
-	// Check process PATH (includes binDir after InjectBinDir)
+	// Check process PATH (includes winget paths and binDir)
 	if p, err := exec.LookPath(toolExe); err == nil {
 		return p
-	}
-	// Explicit fallback paths
-	for _, d := range []string{
-		m.binDir,
-		filepath.Join(os.Getenv("USERPROFILE"), "scoop", "shims"),
-		`C:\ProgramData\chocolatey\bin`,
-	} {
-		p := filepath.Join(d, toolExe)
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
 	}
 	return ""
 }
@@ -81,188 +71,109 @@ func (m *Manager) CheckDependencies() ([]string, error) {
 }
 
 func (m *Manager) InstallDependency(name string) error {
-	switch name {
-	case "yt-dlp":
-		return m.downloadExe(ytdlpExeURL, "yt-dlp.exe")
-	case "gallery-dl":
-		return m.downloadExe(galleryDLExeURL, "gallery-dl.exe")
-	case "ffmpeg":
-		return m.downloadFFmpegZip()
-	}
-	return fmt.Errorf("no install method for %s on Windows", name)
-}
-
-func (m *Manager) downloadExe(url, filename string) error {
-	dest := filepath.Join(m.binDir, filename)
-	resp, err := http.Get(url)
-	if err != nil {
-		return fmt.Errorf("download %s: %w", filename, err)
-	}
-	defer resp.Body.Close()
-	f, err := os.Create(dest)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = io.Copy(f, resp.Body)
-	return err
-}
-
-func (m *Manager) downloadFFmpegZip() error {
-	zipPath := filepath.Join(m.binDir, "_ffmpeg.zip")
-	if err := m.downloadExe(ffmpegZipURL, "_ffmpeg.zip"); err != nil {
-		return err
-	}
-	defer os.Remove(zipPath)
-	// Extract using built-in PowerShell (always available on Win 10+)
-	extractDir := filepath.Join(m.binDir, "_ffmpeg_extracted")
-	ps := exec.Command("powershell", "-NoProfile", "-Command",
-		fmt.Sprintf(`Expand-Archive -Path '%s' -DestinationPath '%s' -Force`, zipPath, extractDir))
-	if err := ps.Run(); err != nil {
-		return fmt.Errorf("extract ffmpeg zip: %w", err)
-	}
-	defer os.RemoveAll(extractDir)
-	// Find and copy ffmpeg.exe + ffprobe.exe from nested subdirectory
-	return filepath.Walk(extractDir, func(path string, fi os.FileInfo, err error) error {
-		if err != nil || fi.IsDir() {
-			return err
-		}
-		base := strings.ToLower(filepath.Base(path))
-		if base == "ffmpeg.exe" || base == "ffprobe.exe" {
-			dest := filepath.Join(m.binDir, filepath.Base(path))
-			in, _ := os.Open(path)
-			out, _ := os.Create(dest)
-			io.Copy(out, in)
-			in.Close()
-			out.Close()
-		}
-		return nil
-	})
+	// We force the use of LaunchSetup to ensure a terminal is shown for installation
+	return m.LaunchSetup()
 }
 
 func (m *Manager) InstallInstructions(tools []string) string {
 	return fmt.Sprintf(
-		"YTDown cần các công cụ sau:\n\n%s\n\nTự động tải và cài đặt vào:\n%s\n\nĐồng ý?",
-		strings.Join(tools, "\n"), m.binDir,
+		"YTDown cần các công cụ sau:\n\n%s\n\nỨng dụng sẽ mở Terminal để cài đặt chúng thông qua Winget (Windows Package Manager). Đồng ý?",
+		strings.Join(tools, "\n"),
 	)
 }
 
-func (m *Manager) PackageManagerName() string { return "direct download" }
+func (m *Manager) PackageManagerName() string { return "winget" }
 
-func (m *Manager) PackageManagerAvailable() bool { return true }
+func (m *Manager) PackageManagerAvailable() bool {
+	_, err := exec.LookPath("winget")
+	return err == nil
+}
 
 func (m *Manager) UpgradeTool(name, binaryPath string) error {
-	if binaryPath == "" {
-		return fmt.Errorf("%s not found, cannot upgrade", name)
+	if !m.PackageManagerAvailable() {
+		return fmt.Errorf("winget not found, cannot upgrade")
 	}
 
-	var cmd *exec.Cmd
+	var wingetID string
 	switch name {
 	case "yt-dlp":
-		// -U = self-update, tự replace file exe hiện tại
-		cmd = exec.Command(binaryPath, "-U")
+		wingetID = ytdlpID
 	case "gallery-dl":
-		// --update = self-update, hoạt động giống hệt macOS/Linux
-		cmd = exec.Command(binaryPath, "--update")
+		wingetID = gallerydlID
 	case "ffmpeg":
-		// ffmpeg không có self-update → re-download zip về binDir
-		return m.downloadFFmpegZip()
+		wingetID = ffmpegID
 	default:
-		return fmt.Errorf("no upgrade method for %s", name)
+		return fmt.Errorf("no winget ID for %s", name)
 	}
 
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("upgrade %s: %w\n%s", name, err, strings.TrimSpace(string(out)))
-	}
-	return nil
+	// Run winget upgrade in a hidden window if it's a silent upgrade, 
+	// but since we want transparency, we could also use LaunchSetup style.
+	// For now, let's use a hidden command for background upgrades if requested.
+	cmd := exec.Command("winget", "upgrade", "--id", wingetID, "--silent", "--accept-source-agreements", "--accept-package-agreements")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	
+	return cmd.Run()
 }
 
 func (m *Manager) LaunchSetup() error {
+	// Script to install missing dependencies via winget
 	script := fmt.Sprintf(`
-$ErrorActionPreference = 'Stop'
-$binDir = '%s'
-New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+$ErrorActionPreference = 'Continue'
+Write-Host "--- YTDown Dependency Setup ---" -ForegroundColor Cyan
+Write-Host "Checking for winget..."
 
-function Download-File($url, $dest) {
-    Write-Host "Downloading $(Split-Path $dest -Leaf)..."
-    $tmp = $dest + '.tmp'
-    try {
-        Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
-        Move-Item -Force $tmp $dest
-        Write-Host "  OK: $dest"
-    } catch {
-        if (Test-Path $tmp) { Remove-Item $tmp -Force }
-        throw "Failed to download $url : $_"
+if (!(Get-Command winget -ErrorAction SilentlyContinue)) {
+    Write-Host "Error: winget is not installed on this system." -ForegroundColor Red
+    Write-Host "Please install 'App Installer' from Microsoft Store."
+    Pause
+    exit
+}
+
+$tools = @{
+    "yt-dlp" = "%s"
+    "ffmpeg" = "%s"
+    "gallery-dl" = "%s"
+}
+
+foreach ($name in $tools.Keys) {
+    $id = $tools[$name]
+    Write-Host "Checking $name..."
+    if (!(Get-Command "$name.exe" -ErrorAction SilentlyContinue)) {
+        Write-Host "Installing $name ($id) via winget..." -ForegroundColor Yellow
+        winget install --id $id --source winget --accept-source-agreements --accept-package-agreements
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Successfully installed $name" -ForegroundColor Green
+        } else {
+            Write-Host "Failed to install $name. You might need to run this as Administrator or install it manually." -ForegroundColor Red
+        }
+    } else {
+        Write-Host "$name is already installed." -ForegroundColor Green
     }
 }
 
-# ── yt-dlp ──────────────────────────────────────────────
-$ytdlp = Join-Path $binDir 'yt-dlp.exe'
-if (Test-Path $ytdlp) {
-    Write-Host "yt-dlp found, running self-update..."
-    & $ytdlp -U
-} else {
-    Download-File '%s' $ytdlp
-}
-
-# ── gallery-dl ───────────────────────────────────────────
-$gallerydl = Join-Path $binDir 'gallery-dl.exe'
-if (Test-Path $gallerydl) {
-    Write-Host "gallery-dl found, running self-update..."
-    & $gallerydl --update
-} else {
-    Download-File '%s' $gallerydl
-}
-
-# ── ffmpeg ───────────────────────────────────────────────
-$ffmpeg = Join-Path $binDir 'ffmpeg.exe'
-if (-not (Test-Path $ffmpeg)) {
-    Write-Host "Downloading ffmpeg (this may take a moment)..."
-    $zipPath = Join-Path $binDir '_ffmpeg.zip'
-    $extractDir = Join-Path $binDir '_ffmpeg_extracted'
-
-    Download-File '%s' $zipPath
-
-    Write-Host "Extracting ffmpeg..."
-    Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
-
-    # Tìm và copy ffmpeg.exe + ffprobe.exe từ subdir bất kỳ
-    Get-ChildItem -Path $extractDir -Recurse -Include 'ffmpeg.exe','ffprobe.exe' | ForEach-Object {
-        $dest = Join-Path $binDir $_.Name
-        Copy-Item $_.FullName $dest -Force
-        Write-Host "  Extracted: $dest"
-    }
-
-    Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-    Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
-} else {
-    Write-Host "ffmpeg already installed (no self-update available, skip)."
-}
-
 Write-Host ""
-Write-Host "Setup complete! All tools are ready in: $binDir"
-Write-Host ""
+Write-Host "Setup complete! Please restart YTDown if tools are still not detected." -ForegroundColor Cyan
 Write-Host "Press any key to close this window..."
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-`, m.binDir, ytdlpExeURL, galleryDLExeURL, ffmpegZipURL)
+`, ytdlpID, ffmpegID, gallerydlID)
 
 	scriptPath := filepath.Join(os.TempDir(), "ytdown_setup.ps1")
 	if err := os.WriteFile(scriptPath, []byte(script), 0644); err != nil {
 		return fmt.Errorf("cannot write setup script: %w", err)
 	}
 
+	// Launch PowerShell in a VISIBLE window
 	cmd := exec.Command(
 		"powershell",
 		"-NoProfile",
-		"-WindowStyle", "Normal",
 		"-ExecutionPolicy", "Bypass",
 		"-File", scriptPath,
 	)
+	// Ensure the window is visible
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: false}
 
-	if err := cmd.Start(); err != nil { // ← Start() không block UI
-		return fmt.Errorf("cannot launch setup: %w", err)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("cannot launch setup terminal: %w", err)
 	}
 
 	return nil
@@ -306,55 +217,49 @@ func (m *Manager) OSName() string            { return "Windows" }
 func (m *Manager) UpdateAssetSuffix() string { return "-windows-setup.zip" }
 
 func (p *Manager) InstallAppUpdate(downloadURL string, parentPID int) error {
-	tmpDir, err := os.MkdirTemp("", "ytdown-update-*")
-	if err != nil {
-		return err
-	}
-
-	zipName := filepath.Base(downloadURL) // VD: YTDown-2026.5.6.2-Windows-Setup.zip
-	// Tên .exe = thay .zip thành .exe
-	exeName := strings.TrimSuffix(zipName, ".zip") + ".exe"
-
-	zipPath := filepath.Join(tmpDir, zipName)
-	exePath := filepath.Join(tmpDir, exeName)
-
-	// Viết PowerShell script chạy ẩn (hidden window)
+	// Script to run winget upgrade in a visible terminal
 	psScript := fmt.Sprintf(`
 $parentPid = %d
-$zipPath   = '%s'
-$exePath   = '%s'
-$tmpDir    = '%s'
+$appId     = '%s'
+
+Write-Host "--- YTDown App Update ---" -ForegroundColor Cyan
+Write-Host "Waiting for YTDown to close..."
 
 # Chờ app chính thoát
-while (Get-Process -Id $parentPid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 500 }
+while (Get-Process -Id $parentPid -ErrorAction SilentlyContinue) { 
+    Start-Sleep -Milliseconds 500 
+}
 
-# Download .zip
-Invoke-WebRequest -Uri '%s' -OutFile $zipPath -UseBasicParsing
+Write-Host "Running winget upgrade for $appId..." -ForegroundColor Yellow
+winget upgrade --id $appId --source winget --accept-source-agreements --accept-package-agreements
 
-# Giải nén
-Expand-Archive -Path $zipPath -DestinationPath $tmpDir -Force
+if ($LASTEXITCODE -eq 0) {
+    Write-Host ""
+    Write-Host "Update successful! You can now restart YTDown." -ForegroundColor Green
+} else {
+    Write-Host ""
+    Write-Host "Update failed or was cancelled. (Exit code: $LASTEXITCODE)" -ForegroundColor Red
+}
 
-# Chạy installer silent (NSIS silent flag /S)
-Start-Process -FilePath $exePath -ArgumentList '/S' -Wait
+Write-Host ""
+Write-Host "Press any key to close this window..."
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+`, parentPID, appWingetID)
 
-# Dọn dẹp
-Remove-Item -Path $tmpDir -Recurse -Force
-`, parentPID, zipPath, exePath, tmpDir, downloadURL)
-
-	scriptPath := filepath.Join(tmpDir, "update.ps1")
-	if err := os.WriteFile(scriptPath, []byte(psScript), 0o755); err != nil {
+	tmpDir := os.TempDir()
+	scriptPath := filepath.Join(tmpDir, "ytdown_app_update.ps1")
+	if err := os.WriteFile(scriptPath, []byte(psScript), 0o644); err != nil {
 		return err
 	}
 
-	// Chạy PowerShell hoàn toàn ẩn - không hiện cửa sổ
+	// Chạy PowerShell hoàn toàn hiện - cho user thấy quá trình update
 	cmd := exec.Command("powershell.exe",
-		"-WindowStyle", "Hidden",
-		"-NonInteractive",
+		"-NoProfile",
 		"-ExecutionPolicy", "Bypass",
 		"-File", scriptPath,
 	)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	return cmd.Start() // Start() không Start() - không chờ, app tự quit sau đó
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: false}
+	return cmd.Start()
 }
 
 func (m *Manager) GetLatestVersion(name string) string {
