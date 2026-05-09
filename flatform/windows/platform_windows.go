@@ -348,7 +348,3 @@ func isSemver(s string) bool {
 	parts := strings.Split(s, ".")
 	return len(parts) >= 2
 }
-g) bool {
-	parts := strings.Split(s, ".")
-	return len(parts) >= 2
-}
