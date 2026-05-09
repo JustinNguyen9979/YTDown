@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+
+	platform "ytdown/flatform"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -53,7 +54,7 @@ func CompressFile(ctx context.Context, inputPath string, options CompressionOpti
 		args = buildImageCompressArgs(inputPath, outputPath, options)
 	}
 
-	cmd := exec.Command(ffmpegPath, args...)
+	cmd := platform.Command(ffmpegPath, args...)
 
 	// Capture stderr to diagnose issues
 	var stderr strings.Builder

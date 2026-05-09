@@ -280,7 +280,9 @@ func (m *Manager) GetLatestVersion(name string) string {
 	case "gallery-dl":
 		// gallery-dl --update --check không thực sự update
 		// Output: "gallery-dl 1.28.1 is up-to-date" hoặc "Updating to version 1.29.0"
-		out, err := exec.Command(binaryPath, "--update", "--check").CombinedOutput()
+		cmd := exec.Command(binaryPath, "--update", "--check")
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		out, err := cmd.CombinedOutput()
 		if err != nil && len(out) == 0 {
 			return ""
 		}
@@ -343,6 +345,10 @@ func isDateVersion(s string) bool {
 }
 
 func isSemver(s string) bool {
+	parts := strings.Split(s, ".")
+	return len(parts) >= 2
+}
+g) bool {
 	parts := strings.Split(s, ".")
 	return len(parts) >= 2
 }

@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	platform "ytdown/flatform"
 )
 
 // ── Package-level UA cache ───────────────────────────────────────────────────
@@ -212,7 +214,7 @@ func buildLinuxUserAgent(browser, version string) string {
 }
 
 func getMacOSVersion() string {
-	out, err := exec.Command("sw_vers", "-productVersion").Output()
+	out, err := platform.Command("sw_vers", "-productVersion").Output()
 	if err != nil {
 		return "10.15.7"
 	}

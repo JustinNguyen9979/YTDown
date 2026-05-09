@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strings"
 
+	platform "ytdown/flatform"
+
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -113,11 +115,11 @@ func getToolVersion(toolName string, toolPath string) string {
 
 	switch toolName {
 	case "ffmpeg":
-		cmd = exec.Command(toolPath, "-version")
+		cmd = platform.Command(toolPath, "-version")
 	case "yt-dlp":
-		cmd = exec.Command(toolPath, "--version")
+		cmd = platform.Command(toolPath, "--version")
 	case "gallery-dl":
-		cmd = exec.Command(toolPath, "--version")
+		cmd = platform.Command(toolPath, "--version")
 	default:
 		return "unknown"
 	}

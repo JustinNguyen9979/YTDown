@@ -18,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	platform "ytdown/flatform"
+
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -119,7 +121,7 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 
 	LogInfo("[DL] Running command: %s with %d args: %v", ytdlpPath, len(args), args)
 
-	cmd := exec.CommandContext(ctx, ytdlpPath, args...)
+	cmd := platform.CommandContext(ctx, ytdlpPath, args...)
 
 	// Ensure /opt/homebrew/bin and other common paths are in PATH so yt-dlp can find ffmpeg, deno, etc.
 	cmd.Env = os.Environ()

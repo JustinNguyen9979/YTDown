@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
+
+	platform "ytdown/flatform"
 
 	"github.com/browserutils/kooky"
 	_ "github.com/browserutils/kooky/browser/all"
@@ -620,7 +621,7 @@ func (m *CookieManager) extractWebSessionFromBrowser(ctx context.Context, browse
 
 	fmt.Printf("[Cookie] 🛠️  Exporting cookies from %s to temporary file...\n", browser)
 	// Using --cookies to export to a file instead of --print-cookies
-	cmd := exec.CommandContext(checkCtx, ytdlp, "--cookies-from-browser", browser, "--cookies", tempCookieFile, "--no-warnings", "--no-playlist", extractionURL)
+	cmd := platform.CommandContext(checkCtx, ytdlp, "--cookies-from-browser", browser, "--cookies", tempCookieFile, "--no-warnings", "--no-playlist", extractionURL)
 	_, err = cmd.CombinedOutput()
 
 	if err != nil {
@@ -990,7 +991,7 @@ func (m *CookieManager) extractBrowserDataViaYTDLP(
 	defer cancel()
 
 	// yt-dlp sẽ export cookies dù download fail → bỏ qua exit error
-	_ = exec.CommandContext(cmdCtx, ytdlp,
+	_ = platform.CommandContext(cmdCtx, ytdlp,
 		"--cookies-from-browser", browser,
 		"--cookies", tempCookieFile,
 		"--no-warnings",

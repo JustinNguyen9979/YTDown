@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	platform "ytdown/flatform"
+
 	"github.com/browserutils/kooky"
 	_ "github.com/browserutils/kooky/browser/all"
 )
@@ -148,7 +150,7 @@ func browserVersionMacOS(id string) string {
 	if !ok {
 		return ""
 	}
-	out, err := exec.Command("defaults", "read", plist, "CFBundleShortVersionString").Output()
+	out, err := platform.Command("defaults", "read", plist, "CFBundleShortVersionString").Output()
 	if err != nil {
 		return ""
 	}
@@ -161,7 +163,7 @@ func browserVersionWindows(id string) string {
 		return ""
 	}
 	script := `(Get-Item "` + exePath + `").VersionInfo.ProductVersion`
-	out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script).Output()
+	out, err := platform.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script).Output()
 	if err != nil {
 		return ""
 	}
@@ -178,7 +180,7 @@ func browserVersionLinux(id string) string {
 		if err != nil {
 			continue
 		}
-		out, err := exec.Command(path, "--version").Output()
+		out, err := platform.Command(path, "--version").Output()
 		if err != nil {
 			continue
 		}

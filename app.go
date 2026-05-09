@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strconv"
@@ -105,7 +104,7 @@ func getBrewLatestVersion(name string) string {
 		return ""
 	}
 
-	cmd := exec.Command(brewPath, "info", "--json=v1", name)
+	cmd := platform.Command(brewPath, "info", "--json=v1", name)
 	cmd.Env = append(os.Environ(),
 		"PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
 	)
@@ -133,7 +132,7 @@ func (a *App) GetVersionStatus() []BinaryVersion {
 	ytdlpPath := getResourcePath("yt-dlp")
 	if ytdlpPath != "" {
 		current := ""
-		if out, err := exec.Command(ytdlpPath, "--version").Output(); err == nil {
+		if out, err := platform.Command(ytdlpPath, "--version").Output(); err == nil {
 			current = strings.TrimSpace(string(out))
 		}
 
@@ -157,7 +156,7 @@ func (a *App) GetVersionStatus() []BinaryVersion {
 	gallerydlPath := getResourcePath("gallery-dl")
 	if gallerydlPath != "" {
 		current := ""
-		if out, err := exec.Command(gallerydlPath, "--version").Output(); err == nil {
+		if out, err := platform.Command(gallerydlPath, "--version").Output(); err == nil {
 			current = strings.TrimSpace(string(out))
 			if parts := strings.Fields(current); len(parts) >= 2 {
 				current = parts[1]
@@ -184,7 +183,7 @@ func (a *App) GetVersionStatus() []BinaryVersion {
 	ffmpegPath := getResourcePath("ffmpeg")
 	if ffmpegPath != "" {
 		current := ""
-		if out, err := exec.Command(ffmpegPath, "-version").Output(); err == nil {
+		if out, err := platform.Command(ffmpegPath, "-version").Output(); err == nil {
 			lines := strings.Split(string(out), "\n")
 			if len(lines) > 0 {
 				parts := strings.Fields(lines[0])

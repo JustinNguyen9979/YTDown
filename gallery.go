@@ -5,12 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	platform "ytdown/flatform"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -125,7 +126,7 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 	// ← count đã có SẴN trước khi download bắt đầu, giải quyết race condition
 	totalCountFromPreflight := preflight.Count
 
-	cmd := exec.CommandContext(ctx, gallerydlPath, args...)
+	cmd := platform.CommandContext(ctx, gallerydlPath, args...)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -324,7 +325,7 @@ func getGalleryTitle(ctx context.Context, gallerydlPath, url, userAgent string, 
 	timeoutCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(timeoutCtx, gallerydlPath, args...)
+	cmd := platform.CommandContext(timeoutCtx, gallerydlPath, args...)
 
 	out, err := cmd.Output()
 	if len(out) == 0 {
