@@ -301,6 +301,6 @@ jobs:
         identifier: JustinNguyen.YTDown
         version: ${{ needs.update-winget-manifests.outputs.version }}
         release-tag: ${{ needs.update-winget-manifests.outputs.version }}
-        installers-regex: 'YTDown.*\\.exe$'
+        installers-regex: 'YTDown.*\.exe$'
         token: ${{ secrets.WINGET_TOKEN }}
 
