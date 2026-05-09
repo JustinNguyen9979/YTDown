@@ -294,6 +294,7 @@ jobs:
       with:
         identifier: JustinNguyen.YTDown
         version: ${{ needs.update-winget-manifests.outputs.version }}
-        installers-regex: '\.exe$' # Chỉ lấy file .exe làm bộ cài
+        release-tag: ${{ needs.update-winget-manifests.outputs.version }}
+        installers-regex: 'YTDown.*Windows.*\\.exe$'
         token: ${{ secrets.WINGET_TOKEN }}
 
