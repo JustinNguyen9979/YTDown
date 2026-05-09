@@ -30,6 +30,11 @@ sudo apt update
 sudo apt install ytdown
 ```
 
+### 🍺 Cài đặt qua Winget (Cho Windows)
+```bash
+winget install JustinNguyen.YTDown
+```
+
 ---
 
 ## 🛠 Tự động cài đặt Dependencies
@@ -80,8 +85,15 @@ Chạy lệnh này để khởi động lại zsh.
 source ~/.zshrc
 ```
 
-### 3. Cài đặt các công cụ hỗ trợ (Cho Development)
-Sau khi cài xong Homebrew, hãy dán lệnh này để cài đặt các thành phần cần thiết:
+---
+
+## 🏗 Hướng dẫn Build ứng dụng từ mã nguồn
+
+Dành cho các bạn muốn tùy chỉnh ứng dụng:
+
+1. **Cài đặt các công cụ hỗ trợ (Cho Development)**
+
+Dành cho MacOS:
 ```bash
 # Công cụ phát triển (bắt buộc)
 brew install go node
@@ -91,46 +103,55 @@ brew install go node
 brew install ffmpeg yt-dlp gallery-dl
 ```
 
+Dành cho Debian:
+```bash
+sudo apt update
+sudo apt install golang nodejs npm ffmpeg yt-dlp gallery-dl
+```
+
+Dành cho Windows:
+```bash
+winget install GoLang.Go OpenJS.NodeJS
+winget install Gyan.FFmpeg yt-dlp.yt-dlp mikf.gallery-dl
+```
+
 **Lưu ý:** Khi chạy app (dev hoặc production), app sẽ **tự động kiểm tra** và **yêu cầu cài** các dependencies nếu thiếu.
 
-### 4. Cài đặt Wails CLI
+2. **Cài đặt Wails CLI**
+
 Đây là công cụ để build ứng dụng này từ mã nguồn Go:
 ```bash
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
 ```
 
----
+3. **Tải mã nguồn về máy:**
+```bash
+git clone https://github.com/JustinNguyen9979/YTDown.git
+cd YTDown
+```
 
-## 🏗 Hướng dẫn Build ứng dụng từ mã nguồn
+4. **Cài đặt thư viện:**
+```bash
+go mod tidy
+```
 
-Dành cho các bạn muốn đóng góp hoặc tùy chỉnh ứng dụng:
+5. **Chạy ứng dụng ở chế độ phát triển:**
+```bash
+wails dev
+```
 
-1. **Tải mã nguồn về máy:**
-   ```bash
-   git clone https://github.com/JustinNguyen9979/YTDown.git
-   cd YTDown
-   ```
+6. **Build bản chính thức:**
 
-2. **Cài đặt thư viện:**
-   ```bash
-   go mod tidy
-   ```
+Build cho hệ điều hành hiện tại của bạn
+```bash
+wails build -ldflags "-s -w"
+```
+Hoặc nếu bạn đang dùng macOS và muốn build bản hỗ trợ cả chip Intel & Apple Silicon (M1/M2/M3):
+```bash
+wails build -platform darwin/universal -ldflags "-s -w"
+```
+*Ứng dụng hoàn thiện sẽ nằm trong thư mục `build/bin/`.*
 
-3. **Chạy ứng dụng ở chế độ phát triển:**
-   ```bash
-   wails dev
-   ```
-
-4. **Build bản chính thức (.app):**
-   ```bash
-   wails build -platform darwin/universal -ldflags "-s -w"
-   ```
-   *Ứng dụng hoàn thiện sẽ nằm trong thư mục `build/bin/YTDown.app`.*
-
-5. **Tạo file đóng gói:**
-   - macOS (.dmg): `bash build.sh`
-   - Windows (.exe): `bash build-windows.sh`
-   - Linux (.AppImage): `bash build-linux.sh`
 
 ## 🌟 Tính năng chính
 
@@ -140,7 +161,6 @@ Dành cho các bạn muốn đóng góp hoặc tùy chỉnh ứng dụng:
 - Hỗ trợ tải từng video đơn lẻ hoặc toàn bộ danh sách phát (Playlist).
 - Tùy chọn định dạng xuất tệp: `MP4` (Video) hoặc `MP3` (Âm thanh).
 - Chọn chất lượng video mong muốn (1080p, 720p, 4k...).
-- Tự động kiểm tra và cập nhật `yt-dlp`, `gallery-dl` ngay trong App.
 - Hiển thị Thumbnail video, xem video trực tiếp từ Thumbnails.
 - Download ảnh cuộn từ X, Instagram, Tikok...
 
