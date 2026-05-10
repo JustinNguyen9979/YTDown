@@ -41,5 +41,13 @@ jobs:
             --version $version `
             --urls $url `
             --token $env:WINGET_TOKEN `
-            --submit
+            --output manifests
+
+            # Patch DisplayVersion thành đúng version hiện tại
+          $f = Get-ChildItem -Path manifests -Recurse -Filter "*.installer.yaml" | Select-Object -First 1
+          (Get-Content $f.FullName) -replace 'DisplayVersion:.*', "DisplayVersion: $version" | Set-Content $f.FullName
+          Write-Host "✅ Patched DisplayVersion → $version"
+
+          # Submit sau khi đã patch
+          .\wingetcreate.exe submit --token $env:WINGET_TOKEN manifests
         shell: pwsh
