@@ -308,10 +308,15 @@ jobs:
           $version = "${{ needs.release.outputs.version }}"
           $url = "https://github.com/JustinNguyen9979/YTDown/releases/download/$version/YTDown-$version-Windows-Setup.exe"
 
+          $parts = $version -split '\.'
+          $releaseDate = "{0}-{1:D2}-{2:D2}" -f [int]$parts[0], [int]$parts[1], [int]$parts[2]
+
           .\wingetcreate.exe update JustinNguyen.YTDown `
             --version $version `
             --display-version $version `
             --urls "$url|x64" `
+            --release-notes-url "https://github.com/JustinNguyen9979/YTDown/releases/tag/$version" `
+            --release-date $releaseDate `
             --out manifests
 
           $f = Get-ChildItem -Path manifests -Recurse -Filter "*.installer.yaml" | Select-Object -First 1
