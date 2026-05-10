@@ -310,15 +310,10 @@ jobs:
 
           .\wingetcreate.exe update JustinNguyen.YTDown `
             --version $version `
+            --display-version $version `
             --urls $url `
             --token $env:WINGET_TOKEN `
-            --output output
+            --submit
 
-          $f = Get-ChildItem -Path output -Recurse -Filter "*.installer.yaml" | Select-Object -First 1
-          (Get-Content $f.FullName) -replace 'DisplayVersion:.*', "DisplayVersion: $version" | Set-Content $f.FullName
-
-          .\wingetcreate.exe submit `
-            --token $env:WINGET_TOKEN `
-            output
 
 
