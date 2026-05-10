@@ -8,7 +8,7 @@ jobs:
   verify-windows-asset:
     runs-on: ubuntu-latest
     steps:
-      - name: Check Windows Setup.exe exists in release
+      - name: Check Windows-Setup.zip exists in release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name }}
@@ -17,12 +17,29 @@ jobs:
           echo "Release assets: $assets"
           if echo "$assets" | grep -q "Windows-Setup.zip"; then
             echo "✅ Windows zip found in release"
-            else
+          else
             echo "❌ Windows-Setup.zip missing from release!"
             exit 1
-            fi
+          fi
 
-      - name: Generate winget manifest (optional, future)
+  winget-publish:
+    runs-on: windows-latest
+    needs: verify-windows-asset
+    steps:
+      - name: Submit to winget via wingetcreate
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
         run: |
-          echo "Windows release verified: ${{ github.event.release.tag_name }}"
-        
+          iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+
+          $version = $env:TAG
+
+          $url = "https://github.com/JustinNguyen9979/YTDown/releases/download/$env:TAG/YTDown-$env:TAG-Windows-Setup.zip"
+
+          .\wingetcreate.exe update JustinNguyen9979.YTDown `
+            --version $version `
+            --urls $url `
+            --token $env:WINGET_TOKEN `
+            --submit
+        shell: pwsh
