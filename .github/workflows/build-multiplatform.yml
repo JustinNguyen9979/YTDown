@@ -277,6 +277,7 @@ jobs:
         # Update Installer specific fields
         sed -i "s|InstallerUrl: .*|InstallerUrl: $INSTALLER_URL|" winget/JustinNguyen.YTDown.installer.yaml
         sed -i "s/InstallerSha256: .*/InstallerSha256: $SHA256/" winget/JustinNguyen.YTDown.installer.yaml
+        sed -i "s/DisplayVersion: .*/DisplayVersion: $VERSION/" winget/JustinNguyen.YTDown.installer.yaml
 
         git config user.email "actions@github.com"
         git config user.name "GitHub Action"
