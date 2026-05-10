@@ -311,7 +311,7 @@ jobs:
           .\wingetcreate.exe update JustinNguyen.YTDown `
             --version $version `
             --display-version $version `
-            --urls $url `
+            --urls "$url|x64" `
             --token $env:WINGET_TOKEN `
             --submit
 
