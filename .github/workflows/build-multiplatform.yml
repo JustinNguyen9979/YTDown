@@ -323,7 +323,7 @@ jobs:
           }
 
           $manifestDir = $f.Directory.FullName
-          .\wingetcreate.exe submit --path $manifestDir --token $env:WINGET_TOKEN
+          .\wingetcreate.exe submit $manifestDir --token $env:WINGET_TOKEN
 
 
 
