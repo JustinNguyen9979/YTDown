@@ -37,7 +37,7 @@ jobs:
 
           $url = "https://github.com/JustinNguyen9979/YTDown/releases/download/$env:TAG/YTDown-$env:TAG-Windows-Setup.zip"
 
-          .\wingetcreate.exe update JustinNguyen9979.YTDown `
+          .\wingetcreate.exe update JustinNguyen.YTDown `
             --version $version `
             --urls $url `
             --token $env:WINGET_TOKEN `
