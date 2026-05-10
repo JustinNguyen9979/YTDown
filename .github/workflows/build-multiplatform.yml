@@ -322,7 +322,8 @@ jobs:
               Write-Host "✅ Injected Dependencies into $($f.Name)"
           }
 
-          .\wingetcreate.exe submit --token $env:WINGET_TOKEN manifests
+          $manifestDir = $f.Directory.FullName
+          .\wingetcreate.exe submit --path $manifestDir --token $env:WINGET_TOKEN
 
 
 
