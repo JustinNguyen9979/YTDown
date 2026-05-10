@@ -10,3 +10,8 @@ Installers:
     UpgradeBehavior: install
 ManifestType: installer
 ManifestVersion: 1.6.0
+Dependencies:
+  PackageDependencies:
+    - PackageIdentifier: Gyan.FFmpeg
+    - PackageIdentifier: yt-dlp.yt-dlp
+    - PackageIdentifier: mikf.gallery-dl

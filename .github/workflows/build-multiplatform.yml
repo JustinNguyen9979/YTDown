@@ -222,15 +222,15 @@ jobs:
           gzip -k dists/stable/main/binary-arm64/Packages
 
               tee /tmp/apt-ftparchive.conf > /dev/null << 'CONF'
-              APT::FTPArchive::Release {
-                Origin "YTDown";
-                Label "YTDown";
-                Suite "stable";
-                Codename "stable";
-                Architectures "amd64 arm64";
-                Components "main";
-                Description "YTDown APT Repository";
-              };
+                APT::FTPArchive::Release {
+                  Origin "YTDown";
+                  Label "YTDown";
+                  Suite "stable";
+                  Codename "stable";
+                  Architectures "amd64 arm64";
+                  Components "main";
+                  Description "YTDown APT Repository";
+                };
               CONF
 
           # ✅ Chỉ dùng apt-ftparchive, KHÔNG dùng cat > để ghi đè
@@ -312,8 +312,23 @@ jobs:
             --version $version `
             --display-version $version `
             --urls "$url|x64" `
-            --token $env:WINGET_TOKEN `
-            --submit
+            --out manifests
+
+          $f = Get-ChildItem -Path manifests -Recurse -Filter "*.installer.yaml" | Select-Object -First 1
+          $content = Get-Content $f.FullName -Raw
+          if (-not $content.Contains("Dependencies:")) {
+              $deps = @(
+                Dependencies:
+                  PackageDependencies:
+                    - PackageIdentifier: Gyan.FFmpeg
+                    - PackageIdentifier: yt-dlp.yt-dlp
+                    - PackageIdentifier: mikf.gallery-dl
+                ) -join "`n"
+                              Add-Content -Path $f.FullName -Value $deps
+                              Write-Host "✅ Injected Dependencies into $($f.Name)"
+                          }
+
+                          .\wingetcreate.exe submit --token $env:WINGET_TOKEN manifests
 
 
 
