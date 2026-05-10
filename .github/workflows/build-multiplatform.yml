@@ -254,6 +254,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Download Windows artifact
       uses: actions/download-artifact@v4
@@ -285,29 +286,39 @@ jobs:
         git commit -m "Update winget manifests to $VERSION" || echo "No changes to commit"
         git push
 
-    - name: Submit manifest to winget
-      env:
-        WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
-      run: |
-        iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+  submit-to-winget:
+    needs: [release, update-winget-manifests]
+    runs-on: windows-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+    steps:
+      - name: Sync fork winget-pkgs với microsoft/winget-pkgs 
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          gh repo sync JustinNguyen9979/winget-pkgs --source microsoft/winget-pkgs --force
+        shell: pwsh
 
-        $version = "${{ needs.release.outputs.version }}"
-        $url = "https://github.com/JustinNguyen9979/YTDown/releases/download/$version/YTDown-$version-Windows-Setup.zip"
+      - name: Submit manifest to winget
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        shell: pwsh
+        run: |
+          iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
 
-        # Generate manifest ra folder output/, KHÔNG submit ngay
-        .\wingetcreate.exe update JustinNguyen.YTDown `
-          --version $version `
-          --urls $url `
-          --token $env:WINGET_TOKEN `
-          --output output
+          $version = "${{ needs.release.outputs.version }}"
+          $url = "https://github.com/JustinNguyen9979/YTDown/releases/download/$version/YTDown-$version-Windows-Setup.zip"
 
-        # Patch DisplayVersion trong installer.yaml
-        $f = Get-ChildItem -Path output -Recurse -Filter "*.installer.yaml" | Select-Object -First 1
-        (Get-Content $f.FullName) -replace 'DisplayVersion:.*', "DisplayVersion: $version" | Set-Content $f.FullName
-        Write-Host "✅ DisplayVersion patched → $version"
+          .\wingetcreate.exe update JustinNguyen.YTDown `
+            --version $version `
+            --urls $url `
+            --token $env:WINGET_TOKEN `
+            --output output
 
-        # Submit folder output/ đã đủ 3 file (wingetcreate update tự tạo đủ)
-        .\wingetcreate.exe submit `
-          --token $env:WINGET_TOKEN `
-          output
-      shell: pwsh
+          $f = Get-ChildItem -Path output -Recurse -Filter "*.installer.yaml" | Select-Object -First 1
+          (Get-Content $f.FullName) -replace 'DisplayVersion:.*', "DisplayVersion: $version" | Set-Content $f.FullName
+
+          .\wingetcreate.exe submit `
+            --token $env:WINGET_TOKEN `
+            output
+
+
