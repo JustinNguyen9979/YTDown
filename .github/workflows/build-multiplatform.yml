@@ -306,7 +306,7 @@ jobs:
           iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
 
           $version = "${{ needs.release.outputs.version }}"
-          $url = "https://github.com/JustinNguyen9979/YTDown/releases/download/$version/YTDown-$version-Windows-Setup.zip"
+          $url = "https://github.com/JustinNguyen9979/YTDown/releases/download/$version/YTDown-$version-Windows-Setup.zip|x64"
 
           .\wingetcreate.exe update JustinNguyen.YTDown `
             --version $version `
