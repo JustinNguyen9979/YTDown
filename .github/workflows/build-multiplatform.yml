@@ -250,6 +250,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
     outputs:
       version: ${{ needs.release.outputs.version }}
+      installer_url: ${{ steps.winget_manifest.outputs.INSTALLER_URL }}
     steps:
     - uses: actions/checkout@v4
       with:
@@ -263,13 +264,17 @@ jobs:
         path: dist
 
     - name: Update Winget Manifests
+      id: winget_manifest
       run: |
         VERSION=${{ needs.release.outputs.version }}
+        RELEASE_DATE=$(echo "$VERSION" | awk -F'.' '{printf "%s-%02d-%02d", $1, $2, $3}')
         EXE_FILE=$(ls dist/*.exe | head -n 1)
         SHA256=$(sha256sum "$EXE_FILE" | awk '{print $1}')
         EXE_NAME=$(basename "$EXE_FILE")
         INSTALLER_URL="https://github.com/JustinNguyen9979/YTDown/releases/download/$VERSION/$EXE_NAME"
 
+        echo "INSTALLER_URL=$INSTALLER_URL" >> $GITHUB_OUTPUT
+        echo "EXE_NAME=$EXE_NAME" >> $GITHUB_OUTPUT
         echo "Updating Winget manifests to version $VERSION with SHA256 $SHA256"
 
         # Update Version in all 3 files
@@ -279,6 +284,13 @@ jobs:
         sed -i "s|InstallerUrl: .*|InstallerUrl: $INSTALLER_URL|" winget/JustinNguyen.YTDown.installer.yaml
         sed -i "s/InstallerSha256: .*/InstallerSha256: $SHA256/" winget/JustinNguyen.YTDown.installer.yaml
         sed -i "s/DisplayVersion: .*/DisplayVersion: $VERSION/" winget/JustinNguyen.YTDown.installer.yaml
+
+        sed -i "s/ReleaseDate: .*/ReleaseDate: $RELEASE_DATE/" winget/JustinNguyen.YTDown.installer.yaml
+        if grep -q "ReleaseNotesUrl:" winget/JustinNguyen.YTDown.locale.en-US.yaml; then
+          sed -i "s|ReleaseNotesUrl: .*|ReleaseNotesUrl: https://github.com/JustinNguyen9979/YTDown/releases/tag/$VERSION|" winget/JustinNguyen.YTDown.locale.en-US.yaml
+        else
+          echo "ReleaseNotesUrl: https://github.com/JustinNguyen9979/YTDown/releases/tag/$VERSION" >> winget/JustinNguyen.YTDown.locale.en-US.yaml
+        fi
 
         git config user.email "actions@github.com"
         git config user.name "GitHub Action"
@@ -306,7 +318,7 @@ jobs:
           iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
 
           $version = "${{ needs.release.outputs.version }}"
-          $url = "https://github.com/JustinNguyen9979/YTDown/releases/download/$version/YTDown-$version-Windows-Setup.exe"
+          $url = "${{ needs.update-winget-manifests.outputs.installer_url }}"
 
           $parts = $version -split '\.'
           $releaseDate = "{0}-{1:D2}-{2:D2}" -f [int]$parts[0], [int]$parts[1], [int]$parts[2]
