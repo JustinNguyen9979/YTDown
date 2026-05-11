@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
@@ -226,7 +225,7 @@ func fetchUAFromYTDLP(browser string) string {
 	if ytdlp == "" {
 		return ""
 	}
-	out, err := exec.Command(ytdlp,
+	out, err := platform.Command(ytdlp,
 		"--cookies-from-browser", browser,
 		"--print", "user_agent",
 		"--terminate-on-connect",

@@ -168,7 +168,7 @@ $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 		"-File", scriptPath,
 	)
 	// Ensure the window is visible
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: false}
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("cannot launch setup terminal: %w", err)
@@ -204,11 +204,15 @@ func (m *Manager) AppDataDir() string {
 }
 
 func (m *Manager) OpenFolder(path string) error {
-	return exec.Command("explorer", path).Start()
+	cmd := exec.Command("explorer", path)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	return cmd.Start()
 }
 
 func (m *Manager) OpenFile(path string) error {
-	return exec.Command("cmd", "/c", "start", "", path).Start()
+	cmd := exec.Command("cmd", "/c", "start", "", path)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	return cmd.Start()
 }
 
 func (m *Manager) OSName() string            { return "Windows" }
@@ -271,7 +275,9 @@ func (m *Manager) GetLatestVersion(name string) string {
 		// yt-dlp --update --dry-run không thực sự update
 		// Output khi đã latest: "yt-dlp is up to date (2025.04.30)"
 		// Output khi có bản mới: "Updating yt-dlp to 2025.05.01 ..."
-		out, err := exec.Command(binaryPath, "--update", "--dry-run").CombinedOutput()
+		cmd := exec.Command(binaryPath, "--update", "--dry-run")
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		out, err := cmd.CombinedOutput()
 		if err != nil && len(out) == 0 {
 			return ""
 		}

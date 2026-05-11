@@ -496,7 +496,7 @@ func GetVideoMetadata(ctx context.Context, url string) (*VideoInfo, error) {
 	args = append(args, url)
 
 	LogDebug("[Metadata] Fetching JSON metadata for %s", url)
-	cmd := exec.CommandContext(ctx, ytdlpPath, args...)
+	cmd := platform.CommandContext(ctx, ytdlpPath, args...)
 
 	var stderrBuf strings.Builder
 	cmd.Stderr = &stderrBuf
@@ -641,7 +641,7 @@ func GetPlaylistVideos(ctx context.Context, url string) ([]string, error) {
 	}
 	args = append(args, url)
 
-	cmd := exec.CommandContext(ctx, ytdlpPath, args...)
+	cmd := platform.CommandContext(ctx, ytdlpPath, args...)
 	// Khai báo buffer cho stderr TRƯỚC khi chạy
 	var stderrBuf strings.Builder
 	cmd.Stderr = &stderrBuf // ← Gắn vào cmd thay vì tạo process mới
