@@ -327,11 +327,17 @@ jobs:
             --version $version `
             --display-version $version `
             --urls "$url|x64" `
+            --token $env:WINGET_TOKEN `
             --release-notes-url "https://github.com/JustinNguyen9979/YTDown/releases/tag/$version" `
             --release-date $releaseDate `
             --out manifests
 
-          $f = Get-ChildItem -Path manifests -Recurse -Filter "*.installer.yaml" | Select-Object -First 1
+          $f = Get-ChildItem -Path manifests -Recurse -Filter "*.installer.yaml" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $f) {
+            Write-Error "❌ wingetcreate failed: no manifest file found"
+            exit 1
+          }
+            
           $content = Get-Content $f.FullName -Raw
           if (-not $content.Contains("Dependencies:")) {
               $deps = "`nDependencies:`n  PackageDependencies:`n    - PackageIdentifier: Gyan.FFmpeg`n    - PackageIdentifier: yt-dlp.yt-dlp`n    - PackageIdentifier: mikf.gallery-dl"
