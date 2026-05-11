@@ -337,10 +337,17 @@ jobs:
             Write-Error "❌ wingetcreate failed: no manifest file found"
             exit 1
           }
-            
+
           $content = Get-Content $f.FullName -Raw
           if (-not $content.Contains("Dependencies:")) {
-              $deps = "`nDependencies:`n  PackageDependencies:`n    - PackageIdentifier: Gyan.FFmpeg`n    - PackageIdentifier: yt-dlp.yt-dlp`n    - PackageIdentifier: mikf.gallery-dl"
+              $lines = @(
+                "",
+                "Dependencies:",
+                "  PackageDependencies:",
+                "    - PackageIdentifier: Gyan.FFmpeg",
+                "    - PackageIdentifier: yt-dlp.yt-dlp",
+                "    - PackageIdentifier: mikf.gallery-dl"
+              )
               Add-Content -Path $f.FullName -Value $deps
               Write-Host "✅ Injected Dependencies into $($f.Name)"
           }
