@@ -216,7 +216,10 @@ func (m *Manager) AppDataDir() string {
 	return filepath.Join(home, ".local", "share", "YTDown")
 }
 
-func (m *Manager) OpenFolder(path string) error { return exec.Command("xdg-open", path).Start() }
+func (m *Manager) OpenFolder(path string) error {
+	os.MkdirAll(path, 0755)
+	return exec.Command("xdg-open", path).Start()
+}
 func (m *Manager) OpenFile(path string) error   { return exec.Command("xdg-open", path).Start() }
 func (m *Manager) OSName() string               { return "Linux" }
 

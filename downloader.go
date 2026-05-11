@@ -125,6 +125,9 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 
 	// Ensure /opt/homebrew/bin and other common paths are in PATH so yt-dlp can find ffmpeg, deno, etc.
 	cmd.Env = os.Environ()
+	if platformManager != nil && platformManager.OSName() == "Windows" {
+		cmd.Env = append(cmd.Env, "PYTHONIOENCODING=utf-8")
+	}
 
 	// CombinedOutput is simpler but we need to stream progress,
 	// so we'll pipe stderr to stdout to avoid buffer deadlocks.

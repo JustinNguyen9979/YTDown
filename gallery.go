@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -127,6 +128,10 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 	totalCountFromPreflight := preflight.Count
 
 	cmd := platform.CommandContext(ctx, gallerydlPath, args...)
+	cmd.Env = os.Environ()
+	if platformManager != nil && platformManager.OSName() == "Windows" {
+		cmd.Env = append(cmd.Env, "PYTHONIOENCODING=utf-8")
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -326,6 +331,10 @@ func getGalleryTitle(ctx context.Context, gallerydlPath, url, userAgent string, 
 	defer cancel()
 
 	cmd := platform.CommandContext(timeoutCtx, gallerydlPath, args...)
+	cmd.Env = os.Environ()
+	if platformManager != nil && platformManager.OSName() == "Windows" {
+		cmd.Env = append(cmd.Env, "PYTHONIOENCODING=utf-8")
+	}
 
 	out, err := cmd.Output()
 	if len(out) == 0 {

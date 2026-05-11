@@ -182,6 +182,7 @@ func (m *Manager) AppDataDir() string {
 // ---------- File system ----------
 
 func (m *Manager) OpenFolder(path string) error {
+	os.MkdirAll(path, 0755)
 	return exec.Command("open", path).Start()
 }
 

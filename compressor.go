@@ -55,6 +55,10 @@ func CompressFile(ctx context.Context, inputPath string, options CompressionOpti
 	}
 
 	cmd := platform.Command(ffmpegPath, args...)
+	cmd.Env = os.Environ()
+	if platformManager != nil && platformManager.OSName() == "Windows" {
+		cmd.Env = append(cmd.Env, "PYTHONIOENCODING=utf-8")
+	}
 
 	// Capture stderr to diagnose issues
 	var stderr strings.Builder

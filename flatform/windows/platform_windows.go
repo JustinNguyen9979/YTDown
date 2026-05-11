@@ -204,12 +204,21 @@ func (m *Manager) AppDataDir() string {
 }
 
 func (m *Manager) OpenFolder(path string) error {
+	absPath, err := filepath.Abs(path)
+	if err == nil {
+		path = absPath
+	}
+	os.MkdirAll(path, 0755)
 	cmd := exec.Command("explorer", path)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	return cmd.Start()
 }
 
 func (m *Manager) OpenFile(path string) error {
+	absPath, err := filepath.Abs(path)
+	if err == nil {
+		path = absPath
+	}
 	cmd := exec.Command("cmd", "/c", "start", "", path)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	return cmd.Start()
