@@ -120,14 +120,22 @@ func (m *Manager) GetLatestVersion(name string) string {
 	}
 
 	func (m *Manager) GetLatestAppVersion() string {
-	bp := m.brewPath()
-	if bp == "" {
-	        return ""
-	}
-	cmd := exec.Command(bp, "info", "--json=v2", "ytdown")
-	cmd.Env = append(os.Environ(),
-	        "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
-	)
+        bp := m.brewPath()
+        if bp == "" {
+                return ""
+        }
+
+        // Ép cập nhật Homebrew cache trước khi lấy thông tin version
+        updateCmd := exec.Command(bp, "update")
+        updateCmd.Env = append(os.Environ(),
+                "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+        )
+        _ = updateCmd.Run() // Bỏ qua lỗi nếu có, tiếp tục chạy lệnh info
+
+        cmd := exec.Command(bp, "info", "--json=v2", "ytdown")
+        cmd.Env = append(os.Environ(),
+                "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+        )
 	out, err := cmd.Output()
 	if err != nil {
 	        return ""

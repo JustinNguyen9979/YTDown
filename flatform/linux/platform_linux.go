@@ -196,8 +196,16 @@ func (m *Manager) GetLatestVersion(name string) string {
 	}
 
 	func (m *Manager) GetLatestAppVersion() string {
-	return m.GetLatestVersion("ytdown")
-	}
+        if m.pm == "apt" {
+                // Thử chạy apt-get update dưới nền.
+                // LƯU Ý: Lệnh này yêu cầu quyền root. Do chạy ngầm không có TTY để hỏi mật khẩu,
+                // nó có thể thất bại nếu user không cấu hình passwordless sudo.
+                // Nếu thất bại, nó sẽ bỏ qua và dùng lại cache cũ của hệ thống.
+                cmd := exec.Command("sudo", "apt-get", "update", "-qq")
+                _ = cmd.Run()
+        }
+        return m.GetLatestVersion("ytdown")
+}
 
 	func (m *Manager) GetDownloadDir() string {	home, _ := os.UserHomeDir()
 	return filepath.Join(home, "Downloads")
