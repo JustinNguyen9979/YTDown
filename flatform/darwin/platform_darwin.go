@@ -117,10 +117,38 @@ func (m *Manager) GetLatestVersion(name string) string {
 		return ""
 	}
 	return result[0].Versions.Stable
-}
+	}
 
-func (m *Manager) UpgradeTool(name, binaryPath string) error {
-	brewPath := "/opt/homebrew/bin/brew"
+	func (m *Manager) GetLatestAppVersion() string {
+	bp := m.brewPath()
+	if bp == "" {
+	        return ""
+	}
+	cmd := exec.Command(bp, "info", "--json=v2", "ytdown")
+	cmd.Env = append(os.Environ(),
+	        "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+	)
+	out, err := cmd.Output()
+	if err != nil {
+	        return ""
+	}
+
+	var result struct {
+	        Casks []struct {
+	                Version string `json:"version"`
+	        } `json:"casks"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+	        return ""
+	}
+
+	if len(result.Casks) > 0 {
+	        return result.Casks[0].Version
+	}
+	return ""
+	}
+
+	func (m *Manager) UpgradeTool(name, binaryPath string) error {	brewPath := "/opt/homebrew/bin/brew"
 	if _, err := os.Stat(brewPath); os.IsNotExist(err) {
 		brewPath = "/usr/local/bin/brew" // Intel Mac fallback
 	}
@@ -196,26 +224,21 @@ func (m *Manager) OSName() string { return "macOS" }
 
 func (m *Manager) UpdateAssetSuffix() string { return ".dmg" }
 
-func (m *Manager) InstallAppUpdate(downloadURL string, parentPID int) error {
-	tmpDir, _ := os.MkdirTemp("", "ytdown-update-*")
-	home, _ := os.UserHomeDir()
-	targetApp := filepath.Join(home, "Applications", "YTDown.app")
-	if _, err := os.Stat("/Applications/YTDown.app"); err == nil {
-		targetApp = "/Applications/YTDown.app"
-	}
+func (m *Manager) InstallAppUpdate(_ string, parentPID int) error {
 	script := fmt.Sprintf(`#!/bin/sh
-set -eu
-PARENT_PID=%d; DMG=%q/update.dmg; MNT=%q/mount
-while kill -0 "$PARENT_PID" 2>/dev/null; do sleep 1; done
-mkdir -p "$MNT"
-curl -L --fail -o "$DMG" %q
-hdiutil attach "$DMG" -nobrowse -quiet -mountpoint "$MNT"
-APP=$(find "$MNT" -maxdepth 1 -name '*.app' -print -quit)
-rm -rf %q; ditto "$APP" %q
-hdiutil detach "$MNT" -quiet || true
-open %q`, parentPID, tmpDir, tmpDir, downloadURL, targetApp, targetApp, targetApp)
+while kill -0 %d >/dev/null 2>&1; do sleep 1; done
+brew upgrade --cask ytdown
+`, parentPID)
 
-	scriptPath := filepath.Join(tmpDir, "update.sh")
-	os.WriteFile(scriptPath, []byte(script), 0755)
-	return exec.Command("sh", scriptPath).Start()
+	tmpFile, err := os.CreateTemp("", "ytdown-update-*.sh")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if err := os.WriteFile(tmpFile.Name(), []byte(script), 0o755); err != nil {
+		return err
+	}
+
+	return exec.Command("open", "-a", "Terminal", tmpFile.Name()).Start()
 }

@@ -193,10 +193,13 @@ func (m *Manager) GetLatestVersion(name string) string {
 		}
 	}
 	return ""
-}
+	}
 
-func (m *Manager) GetDownloadDir() string {
-	home, _ := os.UserHomeDir()
+	func (m *Manager) GetLatestAppVersion() string {
+	return m.GetLatestVersion("ytdown")
+	}
+
+	func (m *Manager) GetDownloadDir() string {	home, _ := os.UserHomeDir()
 	return filepath.Join(home, "Downloads")
 }
 

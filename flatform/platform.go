@@ -43,8 +43,11 @@ type Manager interface {
 	// macOS: brew info, Linux/Windows: GitHub API
 	GetLatestVersion(name string) string
 
-	// LaunchSetup opens a terminal window that installs all dependencies.
-	// macOS: osascript → Terminal.app
+	// GetLatestAppVersion returns the latest available version for the YTDown app itself
+	// via the platform's package manager.
+	GetLatestAppVersion() string
+
+	// LaunchSetup opens a terminal window that installs all dependencies.	// macOS: osascript → Terminal.app
 	// Linux: xterm / gnome-terminal
 	// Windows: PowerShell / winget
 	LaunchSetup() error
