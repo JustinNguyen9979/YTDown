@@ -6,7 +6,7 @@ YTDown là ứng dụng Desktop mạnh mẽ, đơn giản dành cho **macOS, Win
 
 ## Chọn phiên bản phù hợp với hệ điều hành của bạn:
 
-### 🍺 Cài đặt qua Homebrew (Cho macOS)
+### 🍏 Cài đặt qua Homebrew (Cho macOS)
 
 ```bash
 brew update
@@ -23,9 +23,32 @@ sudo apt update
 sudo apt install ytdown
 ```
 
-### 🍺 Cài đặt qua Winget (Cho Windows)
+### 🪟 Cài đặt qua Winget (Cho Windows)
 ```bash
 winget install JustinNguyen.YTDown
+```
+
+---
+
+## 🔄 Hướng dẫn Cập nhật (Upgrade) thủ công
+
+Trong trường hợp bạn muốn tự cập nhật YTDown lên phiên bản mới nhất thông qua dòng lệnh, hãy sử dụng các lệnh sau tương ứng với hệ điều hành của bạn:
+
+### 🍏 macOS (Homebrew)
+```bash
+brew update
+brew upgrade --cask ytdown
+```
+
+### 🐧 Linux (Debian/Ubuntu - APT)
+```bash
+sudo apt update
+sudo apt install --only-upgrade ytdown
+```
+
+### 🪟 Windows (Winget)
+```bash
+winget upgrade --id JustinNguyen.YTDown
 ```
 
 ---
