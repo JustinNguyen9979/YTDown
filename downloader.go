@@ -419,8 +419,13 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 		args = append(args, "--user-agent", userAgent)
 	}
 
-	if cookieArgs := manager.GetCookieArgs(ctx, "yt-dlp", url); len(cookieArgs) > 0 {
+	cookieArgs := manager.GetCookieArgs(ctx, "yt-dlp", url)
+	if len(cookieArgs) > 0 {
 		args = append(args, cookieArgs...)
+		// Thêm player client phù hợp cho YouTube age-restricted khi có cookie
+		if strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be") {
+			args = append(args, "--extractor-args", "youtube:player_client=default,web_creator")
+		}
 	}
 
 	return args

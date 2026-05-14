@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -352,10 +351,6 @@ func (m *CookieManager) GetBrowserData(ctx context.Context, browser string, targ
 }
 
 func (m *CookieManager) ExtractBrowserDataForDomain(ctx context.Context, browser string, targetHost string) (*BrowserExportData, error) {
-	if runtime.GOOS == "linux" {
-		return m.extractBrowserDataViaYTDLP(ctx, browser, targetHost)
-	}
-
 	stores := kooky.FindAllCookieStores(ctx)
 
 	var allCookies []parsedCookie
@@ -463,6 +458,19 @@ func (m *CookieManager) ExtractBrowserDataForDomain(ctx context.Context, browser
 
 	if xhsSession != "" {
 		data.Headers["Cookie"] = "web_session=" + xhsSession
+	}
+
+	hasValidCookies := false
+	for _, c := range allCookies {
+		if c.Value != "" {
+			hasValidCookies = true
+			break
+		}
+	}
+
+	if !hasValidCookies {
+		LogInfo("[Cookie] kooky returned no valid cookies for %s, falling back to yt-dlp", browser)
+		return m.extractBrowserDataViaYTDLP(ctx, browser, targetHost)
 	}
 
 	return data, nil
