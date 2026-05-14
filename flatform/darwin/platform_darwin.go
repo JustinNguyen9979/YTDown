@@ -233,20 +233,38 @@ func (m *Manager) OSName() string { return "macOS" }
 func (m *Manager) UpdateAssetSuffix() string { return ".dmg" }
 
 func (m *Manager) InstallAppUpdate(_ string, parentPID int) error {
-	script := fmt.Sprintf(`#!/bin/sh
+	script := fmt.Sprintf(`#!/bin/bash
 while kill -0 %d >/dev/null 2>&1; do sleep 1; done
-brew upgrade --cask ytdown
+
+for brew in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+  [ -f "$brew" ] && eval "$($brew shellenv)" && BREW_PATH="$brew" && break
+done
+if [ -z "${BREW_PATH:-}" ]; then
+  BREW_PATH="brew"
+fi
+
+$BREW_PATH upgrade --cask ytdown
+
+if [ $? -eq 0 ]; then
+  open -a "YTDown"
+fi
+
+rm -- "$0"
 `, parentPID)
 
 	tmpFile, err := os.CreateTemp("", "ytdown-update-*.sh")
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmpFile.Name())
 
 	if err := os.WriteFile(tmpFile.Name(), []byte(script), 0o755); err != nil {
 		return err
 	}
+	os.Chmod(tmpFile.Name(), 0755)
 
-	return exec.Command("open", "-a", "Terminal", tmpFile.Name()).Start()
+	cmd := exec.Command("bash", tmpFile.Name())
+	// Setpgid to true ensures the child process runs in a new process group,
+	// preventing it from being killed when the parent app exits.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	return cmd.Start()
 }
