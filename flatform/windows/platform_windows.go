@@ -228,34 +228,27 @@ func (m *Manager) OSName() string            { return "Windows" }
 func (m *Manager) UpdateAssetSuffix() string { return "-windows-setup.zip" }
 
 func (p *Manager) InstallAppUpdate(downloadURL string, parentPID int) error {
-	// Script to run winget upgrade in a visible terminal
+	execPath, _ := os.Executable()
+
 	psScript := fmt.Sprintf(`
 $parentPid = %d
 $appId     = '%s'
-
-Write-Host "--- YTDown App Update ---" -ForegroundColor Cyan
-Write-Host "Waiting for YTDown to close..."
+$execPath  = '%s'
 
 # Chờ app chính thoát
 while (Get-Process -Id $parentPid -ErrorAction SilentlyContinue) { 
     Start-Sleep -Milliseconds 500 
 }
 
-Write-Host "Running winget upgrade for $appId..." -ForegroundColor Yellow
-winget upgrade --id $appId --source winget --accept-source-agreements --accept-package-agreements
+# Chạy winget ẩn
+winget upgrade --id $appId --source winget --accept-source-agreements --accept-package-agreements --silent
 
 if ($LASTEXITCODE -eq 0) {
-    Write-Host ""
-    Write-Host "Update successful! You can now restart YTDown." -ForegroundColor Green
-} else {
-    Write-Host ""
-    Write-Host "Update failed or was cancelled. (Exit code: $LASTEXITCODE)" -ForegroundColor Red
+    Start-Process -FilePath $execPath
 }
 
-Write-Host ""
-Write-Host "Press any key to close this window..."
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-`, parentPID, appWingetID)
+Remove-Item -Path $PSCommandPath -Force
+`, parentPID, appWingetID, execPath)
 
 	tmpDir := os.TempDir()
 	scriptPath := filepath.Join(tmpDir, "ytdown_app_update.ps1")
@@ -263,13 +256,18 @@ $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 		return err
 	}
 
-	// Chạy PowerShell hoàn toàn hiện - cho user thấy quá trình update
 	cmd := exec.Command("powershell.exe",
+		"-WindowStyle", "Hidden",
 		"-NoProfile",
 		"-ExecutionPolicy", "Bypass",
 		"-File", scriptPath,
 	)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: false}
+	
+	const CREATE_NEW_PROCESS_GROUP = 0x00000200
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: CREATE_NEW_PROCESS_GROUP,
+	}
 	return cmd.Start()
 }
 

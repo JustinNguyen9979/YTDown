@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 type Manager struct {
@@ -252,12 +253,20 @@ else
     sudo sh -c "apt-get update -qq && apt-get install --only-upgrade -y ytdown"
 fi
 
-"$EXEC" &
+if [ $? -eq 0 ]; then
+    "$EXEC" &
+fi
+
+rm -- "$0"
 `, parentPID, execPath)
 
 	tmpFile, _ := os.CreateTemp("", "ytdown-appupdate-*.sh")
 	tmpFile.WriteString(script)
 	tmpFile.Close()
 	os.Chmod(tmpFile.Name(), 0755)
-	return exec.Command("sh", tmpFile.Name()).Start()
+
+	cmd := exec.Command("sh", tmpFile.Name())
+	// Setsid creates a new session and process group for the script
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	return cmd.Start()
 }
