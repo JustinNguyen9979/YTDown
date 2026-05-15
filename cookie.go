@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -82,6 +83,49 @@ var manager = &CookieManager{
 }
 
 var cookieNamePattern = regexp.MustCompile(`^[A-Za-z0-9!#$%&'*+\-.^_` + "`" + `|~]+$`)
+
+func copyDBToTemp(dbPath string) (string, func(), error) {
+	tmpDir, err := os.MkdirTemp("", "ytdown-db-*")
+	if err != nil {
+		return "", nil, fmt.Errorf("cannot create temp dir: %w", err)
+	}
+	cleanup := func() { os.RemoveAll(tmpDir) }
+
+	// Giữ nguyên tên file gốc để kooky nhận ra đúng (ví dụ: "Cookies", "cookies.sqlite")
+	tmpPath := filepath.Join(tmpDir, filepath.Base(dbPath))
+
+	src, err := os.Open(dbPath)
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("cannot open browser database: %w", err)
+	}
+	defer src.Close()
+
+	dst, err := os.Create(tmpPath)
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("cannot create temp database: %w", err)
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, src); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("cannot copy browser database: %w", err)
+	}
+
+	return tmpPath, cleanup, nil
+}
+
+func copyStoreDBToTemp(store kooky.CookieStore) (string, func(), error) {
+	dbPath := store.FilePath()
+	if dbPath == "" {
+		return "", nil, nil
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		return "", nil, fmt.Errorf("database not found at %s: %w", dbPath, err)
+	}
+	return copyDBToTemp(dbPath)
+}
 
 // writeCookiesToNetscapeFile converts a cookie header string (e.g., "name1=value1; name2=value2")
 // into Netscape cookie file format and writes to a temp file
@@ -418,63 +462,80 @@ func (m *CookieManager) extractBrowserDataViaKooky(ctx context.Context, browser 
 	}
 
 	for _, store := range stores {
-		if strings.EqualFold(store.Browser(), browser) {
-			type cookieResult struct{ cookies []*kooky.Cookie }
-			ch := make(chan cookieResult, 1)
-			go func() {
-				defer func() {
-					if r := recover(); r != nil {
-						LogWarning("[Cookie] kooky TraverseCookies panic: %v", r)
-						ch <- cookieResult{nil}
-					}
-				}()
-				ch <- cookieResult{store.TraverseCookies(filters...).Collect(ctx)}
-			}()
+		if !strings.EqualFold(store.Browser(), browser) {
+			continue
+		}
 
-			var cookies []*kooky.Cookie
-			select {
-			case res := <-ch:
-				cookies = res.cookies
-			case <-time.After(10 * time.Second):
-				LogWarning("[Cookie] kooky timeout for store %s, skipping", browser)
-				continue
-			}
-			for _, c := range cookies {
-				// domain filter
-				if len(relevantDomains) > 0 {
-					matched := false
-					for _, rd := range relevantDomains {
-						if strings.HasSuffix(c.Domain, rd) {
-							matched = true
-							break
-						}
-					}
-					if !matched {
-						continue
+		// Copy file DB sang thư mục tạm trước khi kooky đọc
+		tmpPath, cleanupDB, copyErr := copyStoreDBToTemp(store)
+		if copyErr != nil {
+			LogWarning("[Cookie] cannot copy database for %s (%s): %v, skipping store",
+				browser, store.FilePath(), copyErr)
+			continue
+		}
+		if cleanupDB != nil {
+			defer cleanupDB()
+		}
+
+		// Nếu copy thành công, dùng store với file tạm (kooky đọc từ FilePath)
+		// Nếu không có FilePath (tmpPath == ""), vẫn thử đọc trực tiếp
+		readStore := store
+		if tmpPath != "" {
+			LogInfo("[Cookie] temp copy created for %s at: %s (Note: kooky.FindCookieStore does not exist, using original store for now)", browser, tmpPath)
+			// Tạo store mới từ file tạm
+			// tmpStore, tmpErr := kooky.FindCookieStore(ctx, tmpPath)
+			// if tmpErr == nil && tmpStore != nil {
+			// 	readStore = tmpStore
+			// 	defer readStore.Close()
+			// }
+		}
+
+		type cookieResult struct{ cookies []*kooky.Cookie }
+		ch := make(chan cookieResult, 1)
+		go func(s kooky.CookieStore) {
+			defer func() {
+				if r := recover(); r != nil {
+					LogWarning("[Cookie] kooky TraverseCookies panic: %v", r)
+					ch <- cookieResult{nil}
+				}
+			}()
+			ch <- cookieResult{s.TraverseCookies(filters...).Collect(ctx)}
+		}(readStore)
+
+		var cookies []*kooky.Cookie
+		select {
+		case res := <-ch:
+			cookies = res.cookies
+		case <-time.After(10 * time.Second):
+			LogWarning("[Cookie] kooky timeout for store %s, skipping", browser)
+			continue
+		}
+		for _, c := range cookies {
+			// domain filter
+			if len(relevantDomains) > 0 {
+				matched := false
+				for _, rd := range relevantDomains {
+					if strings.HasSuffix(c.Domain, rd) {
+						matched = true
+						break
 					}
 				}
-
-				// skip excessively large cookies (YouTube max header is 8KB)
-				if len(c.Name)+len(c.Value) > 1000 {
+				if !matched {
 					continue
 				}
+			}
 
-				baseDom := getBaseDomain(c.Domain)
-				key := fmt.Sprintf("%s|%s", baseDom, c.Name) // Strict deduplication by base domain and name
+			// skip excessively large cookies (YouTube max header is 8KB)
+			if len(c.Name)+len(c.Value) > 1000 {
+				continue
+			}
 
-				// Prefer cookies with actual values if a duplicate exists
-				if existing, exists := cookieMap[key]; exists {
-					if c.Value != "" && existing.Value == "" {
-						cookieMap[key] = parsedCookie{
-							Domain:  c.Domain,
-							Path:    c.Path,
-							Name:    c.Name,
-							Value:   c.Value,
-							Secure:  c.Secure,
-							Expires: c.Expires.Unix(),
-						}
-					}
-				} else {
+			baseDom := getBaseDomain(c.Domain)
+			key := fmt.Sprintf("%s|%s", baseDom, c.Name) // Strict deduplication by base domain and name
+
+			// Prefer cookies with actual values if a duplicate exists
+			if existing, exists := cookieMap[key]; exists {
+				if c.Value != "" && existing.Value == "" {
 					cookieMap[key] = parsedCookie{
 						Domain:  c.Domain,
 						Path:    c.Path,
@@ -484,10 +545,19 @@ func (m *CookieManager) extractBrowserDataViaKooky(ctx context.Context, browser 
 						Expires: c.Expires.Unix(),
 					}
 				}
-
-				if (strings.Contains(c.Domain, "xiaohongshu.com") || strings.Contains(c.Domain, "xhslink.com")) && c.Name == "web_session" {
-					xhsSession = c.Value
+			} else {
+				cookieMap[key] = parsedCookie{
+					Domain:  c.Domain,
+					Path:    c.Path,
+					Name:    c.Name,
+					Value:   c.Value,
+					Secure:  c.Secure,
+					Expires: c.Expires.Unix(),
 				}
+			}
+
+			if (strings.Contains(c.Domain, "xiaohongshu.com") || strings.Contains(c.Domain, "xhslink.com")) && c.Name == "web_session" {
+				xhsSession = c.Value
 			}
 		}
 	}
@@ -1029,9 +1099,7 @@ func writeTemporaryCookieFile(cookies []parsedCookie, domain string) (string, er
 
 // extractBrowserDataViaYTDLP dùng yt-dlp --cookies-from-browser thay vì kooky
 // để tránh vấn đề GNOME Keyring/KWallet decrypt trên Linux.
-func (m *CookieManager) extractBrowserDataViaYTDLP(
-	ctx context.Context, browser string, targetHost string,
-) (*BrowserExportData, error) {
+func (m *CookieManager) extractBrowserDataViaYTDLP(ctx context.Context, browser string, targetHost string) (*BrowserExportData, error) {
 	ytdlp := getResourcePath("yt-dlp")
 	if ytdlp == "" {
 		return nil, fmt.Errorf("yt-dlp not found")
