@@ -209,7 +209,10 @@ func (m *Manager) OpenFolder(path string) error {
 		path = absPath
 	}
 	os.MkdirAll(path, 0755)
-	cmd := exec.Command("explorer", path)
+
+	// Dùng cmd /c start giống OpenFile, xử lý được path có dấu cách
+	cmd := exec.Command("cmd", "/c", "start", "", path)
+	// Chỉ ẩn cửa sổ cmd, không ẩn Explorer
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	return cmd.Start()
 }
@@ -262,7 +265,7 @@ Remove-Item -Path $PSCommandPath -Force
 		"-ExecutionPolicy", "Bypass",
 		"-File", scriptPath,
 	)
-	
+
 	const CREATE_NEW_PROCESS_GROUP = 0x00000200
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow:    true,
@@ -302,11 +305,11 @@ func (m *Manager) GetLatestVersion(name string) string {
 		return parseGallerydlUpdateVersion(string(out))
 	}
 	return ""
-	}
+}
 
-	func (m *Manager) GetLatestAppVersion() string {
+func (m *Manager) GetLatestAppVersion() string {
 	if !m.PackageManagerAvailable() {
-	        return ""
+		return ""
 	}
 
 	// Use winget show to get package details
@@ -314,24 +317,25 @@ func (m *Manager) GetLatestVersion(name string) string {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-	        return ""
+		return ""
 	}
 
 	// Parse version from output
 	for _, line := range strings.Split(string(out), "\n") {
-	        line = strings.TrimSpace(line)
-	        if strings.HasPrefix(line, "Version:") {
-	                return strings.TrimSpace(strings.TrimPrefix(line, "Version:"))
-	        }
-	        // Handle Vietnamese localization if present
-	        if strings.HasPrefix(line, "Phiên bản:") {
-	                return strings.TrimSpace(strings.TrimPrefix(line, "Phiên bản:"))
-	        }
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Version:") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "Version:"))
+		}
+		// Handle Vietnamese localization if present
+		if strings.HasPrefix(line, "Phiên bản:") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "Phiên bản:"))
+		}
 	}
 	return ""
-	}
+}
 
-	func parseYtdlpUpdateVersion(output string) string {	output = strings.TrimSpace(output)
+func parseYtdlpUpdateVersion(output string) string {
+	output = strings.TrimSpace(output)
 	// Trường hợp: "yt-dlp is up to date (2025.04.30)"
 	if idx := strings.Index(output, "("); idx != -1 {
 		if end := strings.Index(output[idx:], ")"); end != -1 {

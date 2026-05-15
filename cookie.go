@@ -351,6 +351,38 @@ func (m *CookieManager) GetBrowserData(ctx context.Context, browser string, targ
 }
 
 func (m *CookieManager) ExtractBrowserDataForDomain(ctx context.Context, browser string, targetHost string) (*BrowserExportData, error) {
+	// ── Bước 1: Thử kooky ──────────────────────────────────────────────
+	data, kookyErr := m.extractBrowserDataViaKooky(ctx, browser, targetHost)
+	if kookyErr == nil && data != nil {
+		hasValid := false
+		for _, c := range data.Cookies {
+			if c.Value != "" {
+				hasValid = true
+				break
+			}
+		}
+		if hasValid {
+			LogInfo("[Cookie] ✅ kooky succeeded for %s (%d cookies)", browser, len(data.Cookies))
+			return data, nil
+		}
+		LogInfo("[Cookie] kooky returned 0 valid cookies for %s", browser)
+	} else if kookyErr != nil {
+		LogWarning("[Cookie] kooky failed for %s: %v → falling back to yt-dlp", browser, kookyErr)
+	}
+
+	// ── Bước 2: Fallback sang yt-dlp ───────────────────────────────────
+	LogInfo("[Cookie] Falling back to yt-dlp for %s", browser)
+	return m.extractBrowserDataViaYTDLP(ctx, browser, targetHost)
+}
+
+func (m *CookieManager) extractBrowserDataViaKooky(ctx context.Context, browser string, targetHost string) (result *BrowserExportData, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("kooky panic: %v", r)
+			result = nil
+		}
+	}()
+
 	stores := kooky.FindAllCookieStores(ctx)
 
 	var allCookies []parsedCookie
@@ -387,7 +419,26 @@ func (m *CookieManager) ExtractBrowserDataForDomain(ctx context.Context, browser
 
 	for _, store := range stores {
 		if strings.EqualFold(store.Browser(), browser) {
-			cookies := store.TraverseCookies(filters...).Collect(ctx)
+			type cookieResult struct{ cookies []*kooky.Cookie }
+			ch := make(chan cookieResult, 1)
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						LogWarning("[Cookie] kooky TraverseCookies panic: %v", r)
+						ch <- cookieResult{nil}
+					}
+				}()
+				ch <- cookieResult{store.TraverseCookies(filters...).Collect(ctx)}
+			}()
+
+			var cookies []*kooky.Cookie
+			select {
+			case res := <-ch:
+				cookies = res.cookies
+			case <-time.After(10 * time.Second):
+				LogWarning("[Cookie] kooky timeout for store %s, skipping", browser)
+				continue
+			}
 			for _, c := range cookies {
 				// domain filter
 				if len(relevantDomains) > 0 {
