@@ -84,6 +84,10 @@ var manager = &CookieManager{
 
 var cookieNamePattern = regexp.MustCompile(`^[A-Za-z0-9!#$%&'*+\-.^_` + "`" + `|~]+$`)
 
+func normalizeBrowserName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
 func copyDBToTemp(dbPath string) (string, func(), error) {
 	tmpDir, err := os.MkdirTemp("", "ytdown-db-*")
 	if err != nil {
@@ -260,8 +264,9 @@ func (m *CookieManager) GetCookieArgs(ctx context.Context, tool string, url stri
 
 	switch cfg.Mode {
 	case CookieModeBrowser:
-		if cfg.SelectedBrowser != "" {
-			data, err := m.GetBrowserData(ctx, cfg.SelectedBrowser, url)
+		browser := normalizeBrowserName(cfg.SelectedBrowser)
+		if browser != "" {
+			data, err := m.GetBrowserData(ctx, browser, url)
 
 			if err == nil && data != nil && len(data.Cookies) > 0 {
 				tempFile, err := writeParsedCookiesToNetscapeFile(data.Cookies)
@@ -282,27 +287,27 @@ func (m *CookieManager) GetCookieArgs(ctx context.Context, tool string, url stri
 						args = append(args, "--add-headers", "Cookie: web_session="+data.WebSession)
 						fmt.Printf("[Cookie] ✅ Found web_session via kooky: %s\n", data.WebSession)
 					} else {
-						LogWarning("[Cookie] Could NOT find web_session in %s cookies.", cfg.SelectedBrowser)
-						fmt.Printf("[Cookie] ❌ Failed to find web_session in %s. Please check login status.\n", cfg.SelectedBrowser)
+						LogWarning("[Cookie] Could NOT find web_session in %s cookies.", browser)
+						fmt.Printf("[Cookie] ❌ Failed to find web_session in %s. Please check login status.\n", browser)
 					}
 				}
 			} else {
 				// Fallback to yt-dlp native extraction
 				if isXHS && tool == "yt-dlp" {
-					fmt.Printf("[Cookie] 🔍 Detecting Xiaohongshu, trying to extract web_session from %s via yt-dlp...\n", cfg.SelectedBrowser)
-					session := m.extractWebSessionFromBrowser(ctx, cfg.SelectedBrowser, url)
+					fmt.Printf("[Cookie] 🔍 Detecting Xiaohongshu, trying to extract web_session from %s via yt-dlp...\n", browser)
+					session := m.extractWebSessionFromBrowser(ctx, browser, url)
 					if session != "" {
 						args = append(args, "--add-headers", "Cookie: web_session="+session)
-						LogInfo("[Cookie] Successfully extracted web_session from %s: %s", cfg.SelectedBrowser, session)
+						LogInfo("[Cookie] Successfully extracted web_session from %s: %s", browser, session)
 						fmt.Printf("[Cookie] ✅ Found web_session via yt-dlp: %s\n", session)
-						args = append(args, "--cookies-from-browser", cfg.SelectedBrowser)
+						args = append(args, "--cookies-from-browser", browser)
 					} else {
-						LogWarning("[Cookie] Could NOT find web_session in %s cookies. Make sure you are logged in to Xiaohongshu.", cfg.SelectedBrowser)
-						fmt.Printf("[Cookie] ❌ Failed to find web_session in %s. Please check login status.\n", cfg.SelectedBrowser)
-						args = append(args, "--cookies-from-browser", cfg.SelectedBrowser)
+						LogWarning("[Cookie] Could NOT find web_session in %s cookies. Make sure you are logged in to Xiaohongshu.", browser)
+						fmt.Printf("[Cookie] ❌ Failed to find web_session in %s. Please check login status.\n", browser)
+						args = append(args, "--cookies-from-browser", browser)
 					}
 				} else {
-					args = append(args, "--cookies-from-browser", cfg.SelectedBrowser)
+					args = append(args, "--cookies-from-browser", browser)
 				}
 			}
 		}
@@ -337,6 +342,7 @@ func (m *CookieManager) GetCookieArgs(ctx context.Context, tool string, url stri
 }
 
 func (m *CookieManager) GetBrowserData(ctx context.Context, browser string, targetURL string) (*BrowserExportData, error) {
+	browser = normalizeBrowserName(browser)
 	parsed, _ := url.Parse(targetURL)
 	targetHost := ""
 	if parsed != nil {
@@ -420,6 +426,7 @@ func (m *CookieManager) ExtractBrowserDataForDomain(ctx context.Context, browser
 }
 
 func (m *CookieManager) extractBrowserDataViaKooky(ctx context.Context, browser string, targetHost string) (result *BrowserExportData, err error) {
+	browser = normalizeBrowserName(browser)
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("kooky panic: %v", r)
@@ -684,6 +691,7 @@ func IsXiaohongshu(url string) bool {
 
 // extractWebSessionFromBrowser uses yt-dlp to extract the web_session cookie from a browser
 func (m *CookieManager) extractWebSessionFromBrowser(ctx context.Context, browser string, url string) string {
+	browser = normalizeBrowserName(browser)
 	// 1. Check Cache first (Valid for 5 minutes)
 	m.state.mu.RLock()
 	if m.state.xhsSession != "" && time.Since(m.state.xhsCacheTime) < 5*time.Minute {
@@ -1100,6 +1108,7 @@ func writeTemporaryCookieFile(cookies []parsedCookie, domain string) (string, er
 // extractBrowserDataViaYTDLP dùng yt-dlp --cookies-from-browser thay vì kooky
 // để tránh vấn đề GNOME Keyring/KWallet decrypt trên Linux.
 func (m *CookieManager) extractBrowserDataViaYTDLP(ctx context.Context, browser string, targetHost string) (*BrowserExportData, error) {
+	browser = normalizeBrowserName(browser)
 	ytdlp := getResourcePath("yt-dlp")
 	if ytdlp == "" {
 		return nil, fmt.Errorf("yt-dlp not found")
