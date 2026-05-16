@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"embed"
-	"ytdown/flatform"
+	platform "ytdown/flatform"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -30,11 +30,11 @@ func main() {
 
 	err := wails.Run(&options.App{
 		Title:      "YTDown",
-		Width:      700,
+		Width:      1500,
 		Height:     450, // Initial height
-		MinWidth:   700,
-		MinHeight:  300, // Very low minimum to allow hugging
-		MaxWidth:   700,
+		MinWidth:   1400,
+		MinHeight:  520, // Very low minimum to allow hugging
+		MaxWidth:   0,
 		MaxHeight:  900, // Sufficient maximum for long lists
 		OnStartup:  app.startup,
 		OnShutdown: app.shutdown,

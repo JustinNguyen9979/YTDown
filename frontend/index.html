@@ -149,250 +149,270 @@
 
         <!-- Download Video Tab -->
         <div id="batch" class="tab-content active">
-            <div class="batch-buttons">
-                <button type="button" id="clearBatchBtn" class="action-btn secondary">Clear</button>
-                <div class="cookie-dropdown-container">
-                    <button type="button" id="cookieMainBtn" class="action-btn secondary cookie-dropdown-btn">Add cookie</button>
-                    <div id="cookieDropdownMenu" class="cookie-dropdown-menu" hidden>
-                        <div class="cookie-dropdown-item" data-mode="manual">✍️ Manual (Session only)</div>
-                        <div class="cookie-dropdown-divider"></div>
-                        <div class="cookie-dropdown-header">🌐 Auto (Browser)</div>
-                        <div id="browserList">
-                            <!-- Populated by JS -->
+            <div class="app-split-layout">
+                <section class="app-pane app-pane--config">
+                    <div class="batch-buttons">
+                        <button type="button" id="clearBatchBtn" class="action-btn secondary">Clear</button>
+                        <div class="cookie-dropdown-container">
+                            <button type="button" id="cookieMainBtn" class="action-btn secondary cookie-dropdown-btn">Add cookie</button>
+                            <div id="cookieDropdownMenu" class="cookie-dropdown-menu" hidden>
+                                <div class="cookie-dropdown-item" data-mode="manual">✍️ Manual (Session only)</div>
+                                <div class="cookie-dropdown-divider"></div>
+                                <div class="cookie-dropdown-header">🌐 Auto (Browser)</div>
+                                <div id="browserList">
+                                    <!-- Populated by JS -->
+                                </div>
+                                <div class="cookie-dropdown-divider"></div>
+                                <div class="cookie-dropdown-item" id="clearCookieBtn" style="color: #ff3b30; font-weight: bold;">🗑 Remove Browser Cookies</div>
+                            </div>
                         </div>
-                        <div class="cookie-dropdown-divider"></div>
-                        <div class="cookie-dropdown-item" id="clearCookieBtn" style="color: #ff3b30; font-weight: bold;">🗑 Remove Browser Cookies</div>
+        
+                        <div class="cookie-inline" id="cookieInline" hidden>
+                            <input type="text" id="cookieInput" class="cookie-inline-input" placeholder="Paste the full YouTube Cookie header here..." />
+                            <button type="button" id="confirmCookieBtn" class="action-btn secondary cookie-confirm-btn">Add</button>
+                            <div class="cookie-warning">
+                                <span class="cookie-warning-icon">⚠</span>
+                                <div class="cookie-warning-tooltip">Cookie is stored in memory only and will be deleted when the app closes</div>
+                            </div>
+                        </div>
+                        <div class="cookie-added-badge" id="cookieAddedBadge" hidden>Cookie Added</div>
                     </div>
-                </div>
 
-                <div class="cookie-inline" id="cookieInline" hidden>
-                    <input type="text" id="cookieInput" class="cookie-inline-input" placeholder="Paste the full YouTube Cookie header here..." />
-                    <button type="button" id="confirmCookieBtn" class="action-btn secondary cookie-confirm-btn">Add</button>
-                    <div class="cookie-warning">
-                        <span class="cookie-warning-icon">⚠</span>
-                        <div class="cookie-warning-tooltip">Cookie is stored in memory only and will be deleted when the app closes</div>
+                    <textarea id="batchUrls" class="batch-input" placeholder="Paste video URLs here (one per line)... (YouTube, Reels, Xiaohongshu, TikTok, etc.)"></textarea>
+        
+                    <div id="resultMessage" class="result-message" style="display: none;"></div>
+        
+                    <div class="settings">
+                        <div class="setting-row">
+                            <label>Format: 
+                                <span class="info-icon" data-tooltip="format">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                                    <span class="tooltip-text"></span>
+                                </span>
+                            </label>
+                            <select id="batchFormatSelect"></select>
+                        </div>
+        
+                        <div class="setting-row" id="batchQualityRow">
+                            <label>Quality: 
+                                <span class="info-icon" data-tooltip="quality">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                                    <span class="tooltip-text"></span>
+                                </span>
+                            </label>
+                            <select id="batchQualitySelect"></select>
+                        </div>
+        
+                        <div class="setting-row setting-row-right" id="batchThreadsRow">
+                            <label>Threads: 
+                                <span class="info-icon" data-tooltip="threads">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                                    <span class="tooltip-text"></span>
+                                </span>
+                            </label>
+                            <select id="batchThreadsSelect"></select>
+                        </div>
+        
+                        <div class="setting-row setting-row-right" id="connectionsRow">
+                            <label>Connections: 
+                                <span class="info-icon" data-tooltip="connections">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                                    <span class="tooltip-text"></span>
+                                </span>
+                            </label>
+                            <select id="connectionsSelect"></select>
+                        </div>
+        
+                        <div class="option-row" id="playlistRow">
+                            <div class="option-control checkbox-control">
+                                <label class="checkbox-label">
+                                <input type="checkbox" id="noPlaylistCheckbox" checked />
+                                <span class="checkbox-text">No Playlist</span>
+                                </label>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <div class="cookie-added-badge" id="cookieAddedBadge" hidden>Cookie Added</div>
-            </div>
-
-            <textarea id="batchUrls" class="batch-input" placeholder="Paste video URLs here (one per line)... (YouTube, Reels, Xiaohongshu, TikTok, etc.)"></textarea>
-
-            <div id="resultMessage" class="result-message" style="display: none;"></div>
-
-            <div class="settings">
-                <div class="setting-row">
-                    <label>Format: 
-                        <span class="info-icon" data-tooltip="format">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
-                            <span class="tooltip-text"></span>
-                        </span>
-                    </label>
-                    <select id="batchFormatSelect"></select>
-                </div>
-
-                <div class="setting-row" id="batchQualityRow">
-                    <label>Quality: 
-                        <span class="info-icon" data-tooltip="quality">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
-                            <span class="tooltip-text"></span>
-                        </span>
-                    </label>
-                    <select id="batchQualitySelect"></select>
-                </div>
-
-                <div class="setting-row setting-row-right" id="batchThreadsRow">
-                    <label>Threads: 
-                        <span class="info-icon" data-tooltip="threads">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
-                            <span class="tooltip-text"></span>
-                        </span>
-                    </label>
-                    <select id="batchThreadsSelect"></select>
-                </div>
-
-                <div class="setting-row setting-row-right" id="connectionsRow">
-                    <label>Connections: 
-                        <span class="info-icon" data-tooltip="connections">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
-                            <span class="tooltip-text"></span>
-                        </span>
-                    </label>
-                    <select id="connectionsSelect"></select>
-                </div>
-
-                <div class="option-row" id="playlistRow">
-                    <div class="option-control checkbox-control">
-                        <label class="checkbox-label">
-                        <input type="checkbox" id="noPlaylistCheckbox" checked />
-                        <span class="checkbox-text">No Playlist</span>
-                        </label>
+        
+                    <div class="save-path">
+                        <label>Save to:</label>
+                        <div class="path-group">
+                            <input type="text" id="batchSavePath" class="path-input" />
+                            <button type="button" class="browse-btn" id="browseBatchBtn">Browse</button>
+                            <button type="button" class="browse-btn open-folder-btn" id="openBatchFolderBtn" title="Open Folder">📂 Open</button>
+                        </div>
                     </div>
-                </div>
-            </div>
+        
+                    <div class="batch-download-actions">
+                        <button type="button" class="download-btn" id="startBatchBtn">▶ Start Download Videos</button>
+                        <button type="button" class="download-btn pause-btn" id="pauseBatchBtn" hidden>⏸ Pause</button>
+                        <button type="button" class="download-btn cancel-btn" id="cancelBatchBtn" hidden>✕ Cancel</button>
+                    </div>
+                </section>
 
-            <div class="save-path">
-                <label>Save to:</label>
-                <div class="path-group">
-                    <input type="text" id="batchSavePath" class="path-input" />
-                    <button type="button" class="browse-btn" id="browseBatchBtn">Browse</button>
-                    <button type="button" class="browse-btn open-folder-btn" id="openBatchFolderBtn" title="Open Folder">📂 Open</button>
-                </div>
-            </div>
+                <div class="app-pane-divider" aria-hidden="true"></div>
 
-            <div class="batch-download-actions">
-                <button type="button" class="download-btn" id="startBatchBtn">▶ Start Download Videos</button>
-                <button type="button" class="download-btn pause-btn" id="pauseBatchBtn" hidden>⏸ Pause</button>
-                <button type="button" class="download-btn cancel-btn" id="cancelBatchBtn" hidden>✕ Cancel</button>
-            </div>
-
-            <div id="batchErrorLog" class="error-log-container"></div>
-
-            <!-- Download Progress -->
-            <div class="batch-progress">
-                <table class="batch-table" id="batchTable">
-                    <tbody id="batchTableBody"></tbody>
-                </table>
-                <div class="batch-summary" id="batchSummary"></div>
+                <section class="app-pane app-pane--result">
+                    <div id="batchErrorLog" class="error-log-container"></div>
+                    <!-- Download Progress -->
+                    <div class="batch-progress">
+                        <table class="batch-table" id="batchTable">
+                            <tbody id="batchTableBody"></tbody>
+                        </table>
+                        <div class="batch-summary" id="batchSummary"></div>
+                    </div>
+                </section>
             </div>
         </div>
 
         <!-- Download Images Tab -->
         <div id="gallery" class="tab-content">
-            <div class="batch-buttons">
-                <button type="button" id="clearGalleryBtn" class="action-btn secondary">Clear</button>
-                <div class="cookie-dropdown-container">
-                    <button type="button" id="galleryCookieMainBtn" class="action-btn secondary cookie-dropdown-btn">Add cookie</button>
-                    <!-- Using the same menu logic as video tab via JS -->
-                </div>
-
-                <div class="cookie-inline" id="galleryCookieInline" hidden>
-                    <input type="text" id="galleryCookieInput" class="cookie-inline-input" placeholder="Paste the full Cookie header here..." />
-                    <button type="button" id="confirmGalleryCookieBtn" class="action-btn secondary cookie-confirm-btn">Add</button>
-                    <div class="cookie-warning">
-                        <span class="cookie-warning-icon">⚠</span>
-                        <div class="cookie-warning-tooltip">Cookie is used for authenticated image sites like Pixiv, Instagram, etc.</div>
-                    </div>
-                </div>
-                <div class="cookie-added-badge" id="galleryCookieAddedBadge" hidden>Cookie Added</div>
-            </div>
-
-            <textarea id="galleryUrls" class="batch-input" placeholder="Paste URLs here (one per line)... (Imgur, Instagram, Twitter, Xiaohongshu, etc.)"></textarea>
-
-            <div id="galleryResultMessage" class="result-message" style="display: none;"></div>
-
-            <div class="settings">
-                <div class="setting-row">
-                    <label>Threads:</label>
-                    <select id="galleryThreadsSelect"></select>
-                </div>
-
-                <div class="setting-row">
-                    <label>File Types:</label>
-                    <div class="custom-select-container" id="galleryFormatsContainer">
-                        <div class="custom-select-trigger" id="galleryFormatsTrigger">Loading...</div>
-                        <div class="custom-select-options multi-select" id="galleryFormatsOptions">
-                            <div class="custom-option multi" data-value="all">
-                                <input type="checkbox" id="fmt-all"> <label for="fmt-all" style="font-weight: bold;">Select All</label>
-                            </div>
-                            <div id="galleryMediaList">
-                                <!-- Dynamically populated by app.js -->
+            <div class="app-split-layout">
+                <section class="app-pane app-pane--config">
+                    <div class="batch-buttons">
+                        <button type="button" id="clearGalleryBtn" class="action-btn secondary">Clear</button>
+                        <div class="cookie-dropdown-container">
+                            <button type="button" id="galleryCookieMainBtn" class="action-btn secondary cookie-dropdown-btn">Add cookie</button>
+                            <!-- Using the same menu logic as video tab via JS -->
+                        </div>
+        
+                        <div class="cookie-inline" id="galleryCookieInline" hidden>
+                            <input type="text" id="galleryCookieInput" class="cookie-inline-input" placeholder="Paste the full Cookie header here..." />
+                            <button type="button" id="confirmGalleryCookieBtn" class="action-btn secondary cookie-confirm-btn">Add</button>
+                            <div class="cookie-warning">
+                                <span class="cookie-warning-icon">⚠</span>
+                                <div class="cookie-warning-tooltip">Cookie is used for authenticated image sites like Pixiv, Instagram, etc.</div>
                             </div>
                         </div>
+                        <div class="cookie-added-badge" id="galleryCookieAddedBadge" hidden>Cookie Added</div>
                     </div>
-                </div>
+        
+                    <textarea id="galleryUrls" class="batch-input" placeholder="Paste URLs here (one per line)... (Imgur, Instagram, Twitter, Xiaohongshu, etc.)"></textarea>
+        
+                    <div id="galleryResultMessage" class="result-message" style="display: none;"></div>
+        
+                    <div class="settings">
+                        <div class="setting-row">
+                            <label>Threads:</label>
+                            <select id="galleryThreadsSelect"></select>
+                        </div>
+        
+                        <div class="setting-row">
+                            <label>File Types:</label>
+                            <div class="custom-select-container" id="galleryFormatsContainer">
+                                <div class="custom-select-trigger" id="galleryFormatsTrigger">Loading...</div>
+                                <div class="custom-select-options multi-select" id="galleryFormatsOptions">
+                                    <div class="custom-option multi" data-value="all">
+                                        <input type="checkbox" id="fmt-all"> <label for="fmt-all" style="font-weight: bold;">Select All</label>
+                                    </div>
+                                    <div id="galleryMediaList">
+                                        <!-- Dynamically populated by app.js -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+        
+                        <div class="setting-row" style="grid-column: span 3;">
+                            <label>Extra Arguments (Advanced):</label>
+                            <input type="text" id="galleryArgs" class="url-input" placeholder="e.g. --filter 'width > 1000' --range 1-10" />
+                        </div>
+        
+                        <div id="galleryOptionRows" class="setting-row" style="grid-column: span 3; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 20px; margin-top: 4px;"></div>
+                    </div>
+        
+                    <div class="save-path">
+                        <label>Save to:</label>
+                        <div class="path-group">
+                            <input type="text" id="gallerySavePath" class="path-input" />
+                            <button type="button" class="browse-btn" id="browseGalleryBtn">Browse</button>
+                            <button type="button" class="browse-btn open-folder-btn" id="openGalleryFolderBtn" title="Open Folder">📂 Open</button>
+                        </div>
+                    </div>
+        
+                    <div class="batch-download-actions">
+                        <button type="button" class="download-btn" id="startGalleryBtn">🖼 Start Download Images</button>
+                        <button type="button" class="download-btn cancel-btn" id="cancelGalleryBtn" hidden>✕ Cancel</button>
+                    </div>
 
-                <div class="setting-row" style="grid-column: span 3;">
-                    <label>Extra Arguments (Advanced):</label>
-                    <input type="text" id="galleryArgs" class="url-input" placeholder="e.g. --filter 'width > 1000' --range 1-10" />
-                </div>
+                </section>
 
-                <div id="galleryOptionRows" class="setting-row" style="grid-column: span 3; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 20px; margin-top: 4px;"></div>
-            </div>
+                <div class="app-pane-divider" aria-hidden="true"></div>
 
-            <div class="save-path">
-                <label>Save to:</label>
-                <div class="path-group">
-                    <input type="text" id="gallerySavePath" class="path-input" />
-                    <button type="button" class="browse-btn" id="browseGalleryBtn">Browse</button>
-                    <button type="button" class="browse-btn open-folder-btn" id="openGalleryFolderBtn" title="Open Folder">📂 Open</button>
-                </div>
-            </div>
-
-            <div class="batch-download-actions">
-                <button type="button" class="download-btn" id="startGalleryBtn">🖼 Start Download Images</button>
-                <button type="button" class="download-btn cancel-btn" id="cancelGalleryBtn" hidden>✕ Cancel</button>
-            </div>
-            
-            <div id="galleryErrorLog" class="error-log-container"></div>
-
-            <!-- Download Progress -->
-            <div class="batch-progress">
-                <table class="batch-table" id="galleryTable">
-                    <tbody id="galleryTableBody"></tbody>
-                </table>
+                <section class="app-pane app-pane--result">
+                    <div id="galleryErrorLog" class="error-log-container"></div>
+                    <!-- Download Progress -->
+                    <div class="batch-progress">
+                        <table class="batch-table" id="galleryTable">
+                            <tbody id="galleryTableBody"></tbody>
+                        </table>
+                    </div>
+                </section>
             </div>
         </div>
 
         <!-- Compress Tab -->
         <div id="compress" class="tab-content">
-            <div class="compress-controls-row">
-                <div class="setting-row">
-                    <label>Type:</label>
-                    <select id="compressType"></select>
-                </div>
-                <div class="setting-row">
-                    <label>Selection:</label>
-                    <select id="selectionMode"></select>
-                </div>
-                <div class="setting-row">
-                    <label>&nbsp;</label>
-                    <button type="button" id="selectFilesBtn" class="browse-btn">📁 Select</button>
-                </div>
-            </div>
-
-            <div class="file-list-container" style="margin-top: 10px;">
-                <table class="batch-table" id="compressTable">
-                    <tbody id="compressTableBody"></tbody>
-                </table>
-            </div>
-
-            <div class="settings" style="margin-top: 16px;">
-                <div class="setting-row">
-                    <label>Quality Level:</label>
-                    <select id="compressQuality"></select>
-                </div>
-
-                <div class="setting-row">
-                    <label>Output Format:</label>
-                    <select id="compressFormat">
-                        <!-- Dynamic options -->
-                    </select>
-                </div>
-
-                <div class="setting-row full-width" id="customQualityContainer" style="display: none; grid-column: span 2;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <label id="customQualityLabel">Quality: 80 - High Quality</label>
+            <div class="app-split-layout">
+                <section class="app-pane app-pane--config">
+                    <div class="compress-controls-row">
+                        <div class="setting-row">
+                            <label>Type:</label>
+                            <select id="compressType"></select>
+                        </div>
+                        <div class="setting-row">
+                            <label>Selection:</label>
+                            <select id="selectionMode"></select>
+                        </div>
+                        <div class="setting-row">
+                            <label>&nbsp;</label>
+                            <button type="button" id="selectFilesBtn" class="browse-btn">📁 Select</button>
+                        </div>
                     </div>
-                    <input type="range" id="customQualitySlider" min="1" max="100" value="80">
-                </div>
+                    <div class="settings" style="margin-top: 16px;">
+                        <div class="setting-row">
+                            <label>Quality Level:</label>
+                            <select id="compressQuality"></select>
+                        </div>
 
-                <div class="setting-row full-width" id="slowPresetContainer" style="grid-column: span 2; flex-direction: row; align-items: center; gap: 10px;">
-                    <div id="compressOptionRows"></div>    
+                        <div class="setting-row">
+                            <label>Output Format:</label>
+                            <select id="compressFormat">
+                                <!-- Dynamic options -->
+                            </select>
+                        </div>
+
+                        <div class="setting-row full-width" id="customQualityContainer" style="display: none; grid-column: span 2;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <label id="customQualityLabel">Quality: 80 - High Quality</label>
+                            </div>
+                            <input type="range" id="customQualitySlider" min="1" max="100" value="80">
+                        </div>
+
+                        <div class="setting-row full-width" id="slowPresetContainer" style="grid-column: span 2; flex-direction: row; align-items: center; gap: 10px;">
+                            <div id="compressOptionRows"></div>    
+                        </div>
+                    </div>
+                    <div class="save-path">
+                    <label>Save to:</label>
+                    <div class="path-group">
+                        <input type="text" id="compressSavePath" class="path-input" />
+                        <button type="button" class="browse-btn" id="browseCompressBtn">Browse</button>
+                        <button type="button" class="browse-btn open-folder-btn" id="openCompressFolderBtn" title="Open Folder">📂 Open</button>
+                    </div>
+                    <small style="color: var(--text-secondary); font-size: 10px; margin-top: 4px; opacity: 0.7;">* Files will be saved in a 'Compressed' folder within this path.</small>
                 </div>
+    
+                <button type="button" class="download-btn" id="startCompressBtn" disabled>⚡ Start Compression</button>
+                </section>
+
+                <div class="app-pane-divider" aria-hidden="true"></div>
+                <section class="app-pane app-pane--result">
+                    <div class="batch-progress">
+                        <table class="batch-table" id="compressTable">
+                            <tbody id="compressTableBody"></tbody>
+                        </table>
+                    </div>
+                </section>
             </div>
-
-            <div class="save-path">
-                <label>Save to:</label>
-                <div class="path-group">
-                    <input type="text" id="compressSavePath" class="path-input" />
-                    <button type="button" class="browse-btn" id="browseCompressBtn">Browse</button>
-                    <button type="button" class="browse-btn open-folder-btn" id="openCompressFolderBtn" title="Open Folder">📂 Open</button>
-                </div>
-                <small style="color: var(--text-secondary); font-size: 10px; margin-top: 4px; opacity: 0.7;">* Files will be saved in a 'Compressed' folder within this path.</small>
-            </div>
-
-            <button type="button" class="download-btn" id="startCompressBtn" disabled>⚡ Start Compression</button>
         </div>
 
         <!-- Info Tab -->

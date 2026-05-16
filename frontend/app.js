@@ -965,35 +965,58 @@ async function checkUpdates() {
 let lastSetHeight = 0;
 
 function setupWindowAutoHug() {
-    if (typeof window === 'undefined' || !window.runtime || !window.runtime.WindowSetSize) return;
+  if (typeof window === "undefined" || !window.runtime || !window.runtime.WindowSetSize) return;
 
-    const updateHeight = () => {
-        const container = document.querySelector('.container');
-        if (!container) return;
+  let lastSetHeight = 0;
+  let ticking = false;
 
-        const contentHeight = Math.ceil(container.getBoundingClientRect().height);
-        const windowHeight = contentHeight + 40; 
-        
-        if (contentHeight > 200 && Math.abs(windowHeight - lastSetHeight) > 5) {
-            console.log('[UI] Auto-hugging to:', windowHeight);
-            lastSetHeight = windowHeight;
-            window.runtime.WindowSetSize(700, windowHeight);
-        }
-    };
+  const updateHeight = () => {
+    ticking = false;
 
-    const container = document.querySelector('.container');
-    if (container) {
-        const resizeObserver = new ResizeObserver(() => {
-            requestAnimationFrame(updateHeight);
-        });
-        resizeObserver.observe(container);
+    const container = document.querySelector(".container");
+    const activeTab = document.querySelector(".tab-content.active");
+    const leftPane = activeTab?.querySelector(".app-pane--config");
+
+    if (!container || !leftPane) return;
+
+    const containerStyle = getComputedStyle(container);
+    const paddingTop = parseFloat(containerStyle.paddingTop) || 0;
+    const paddingBottom = parseFloat(containerStyle.paddingBottom) || 0;
+
+    const containerTop = container.getBoundingClientRect().top;
+    const leftBottom = leftPane.getBoundingClientRect().bottom;
+
+    const contentHeight = Math.ceil((leftBottom - containerTop) + paddingBottom);
+    const windowHeight = Math.max(520, Math.min(900, contentHeight + 20));
+    const currentWidth = Math.max(window.innerWidth, 1400);
+
+    if (Math.abs(windowHeight - lastSetHeight) > 4) {
+      lastSetHeight = windowHeight;
+      window.runtime.WindowSetSize(currentWidth, windowHeight);
     }
+  };
 
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            setTimeout(updateHeight, 100); 
-        });
+  const requestUpdate = () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(updateHeight);
+  };
+
+  const container = document.querySelector(".container");
+  if (!container) return;
+
+  const resizeObserver = new ResizeObserver(requestUpdate);
+  resizeObserver.observe(container);
+
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      setTimeout(requestUpdate, 50);
+      setTimeout(requestUpdate, 150);
     });
+  });
+
+  window.addEventListener("resize", requestUpdate);
+  setTimeout(requestUpdate, 200);
 }
 
 function setupGoEvents() {
@@ -1270,11 +1293,18 @@ function setupTabs() {
 }
 
 function closeAllDropdowns() {
-    const cookieMenu = document.getElementById('cookieDropdownMenu');
-    if (cookieMenu) cookieMenu.hidden = true;
-    document.querySelectorAll('.custom-select-container').forEach(c => c.classList.remove('open'));
-    const galleryFormats = document.getElementById('galleryFormatsContainer');
-    if (galleryFormats) galleryFormats.classList.remove('open');
+  const cookieMenu = document.getElementById('cookieDropdownMenu');
+  if (cookieMenu) cookieMenu.hidden = true;
+
+  document.querySelectorAll('.custom-select-container').forEach((c) => {
+    c.classList.remove('open');
+    c.classList.remove('open-up');
+    const opts = c.querySelector('.custom-select-options');
+    if (opts) opts.style.maxHeight = '';
+  });
+
+  const galleryFormats = document.getElementById('galleryFormatsContainer');
+  if (galleryFormats) galleryFormats.classList.remove('open');
 }
 
 function refreshCustomSelectStates() {
@@ -1739,10 +1769,33 @@ function initCustomSelects() {
         trigger.addEventListener('click', (e) => {
             if (select.disabled) return;
             e.stopPropagation();
+
             const isOpen = container.classList.contains('open');
-            closeAllDropdowns(); // ← thay thế dòng forEach cũ
-            if (!isOpen) container.classList.add('open');
-        });
+            closeAllDropdowns();
+
+            if (isOpen) return;
+
+            const appContainer = document.querySelector('.container');
+            const triggerRect = trigger.getBoundingClientRect();
+            const appRect = appContainer
+                ? appContainer.getBoundingClientRect()
+                : { bottom: window.innerHeight };
+
+            const safeBottom = appRect.bottom - 16;
+            const spaceBelow = safeBottom - (triggerRect.bottom + 5);
+            const spaceAbove = triggerRect.top - (appRect.top + 16);
+
+            container.classList.remove('open-up');
+
+            if (spaceBelow < 180 && spaceAbove > spaceBelow) {
+                container.classList.add('open-up');
+                optionsDiv.style.maxHeight = `${Math.max(120, Math.min(250, spaceAbove - 5))}px`;
+            } else {
+                optionsDiv.style.maxHeight = `${Math.max(120, Math.min(250, spaceBelow))}px`;
+            }
+
+            container.classList.add('open');
+            });
     });
 
     refreshCustomSelectStates();
@@ -1752,15 +1805,28 @@ function renderCompressFiles() {
     const tbody = document.getElementById('compressTableBody');
     if (!tbody) return;
     tbody.innerHTML = '';
+
     state.selectedCompressFiles.forEach((file, i) => {
         const filename = file.split('/').pop().split('\\').pop();
+        const shortName = truncateMiddle(filename, 40);
+
         const row = document.createElement('tr');
         row.id = `compress-row-${i}`;
         row.innerHTML = `
             <td>${i + 1}</td>
-            <td title="${file}">${filename}</td>
-            <td class="compress-status">Waiting</td>
-            <td><div class="batch-progress-bar"><div class="batch-progress-fill" id="compress-progress-${i}"></div></div></td>
+            <td title="${escapeHtml(file)}">${escapeHtml(shortName)}</td>
+            <td class="status-cell status-waiting">
+                <span class="status-icon"></span>
+                <span>Waiting</span>
+            </td>
+            <td>
+                <div class="progress-cell-wrap">
+                    <div class="batch-progress-bar" style="flex:1">
+                        <div class="batch-progress-fill" id="compress-progress-${i}" style="width:0%"></div>
+                    </div>
+                    <span class="progress-pct" id="compress-pct-${i}">0%</span>
+                </div>
+            </td>
         `;
         tbody.appendChild(row);
     });
@@ -1768,36 +1834,92 @@ function renderCompressFiles() {
 
 function updateCompressStatus(index, status) {
     const row = document.getElementById(`compress-row-${index}`);
-    if (row) {
-        const statusCell = row.querySelector('.compress-status');
-        if (statusCell) statusCell.textContent = status.charAt(0).toUpperCase() + status.slice(1);
-    }
+    if (!row) return;
+
+    const statusCell = row.querySelector('.status-cell');
+    if (!statusCell) return;
+
+    const textMap = {
+        waiting: 'Waiting',
+        compressing: 'Processing',
+        done: 'Done',
+        error: 'Error',
+        canceled: 'Canceled'
+    };
+
+    const label = textMap[status] || (status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Waiting');
+
+    statusCell.className = `status-cell status-${status || 'waiting'}`;
+    statusCell.innerHTML = `
+        <span class="status-icon"></span>
+        <span>${label}</span>
+    `;
 }
 
 function updateCompressProgress(index, status, message) {
     const row = document.getElementById(`compress-row-${index}`);
-    if (row) {
-        const fill = document.getElementById(`compress-progress-${index}`);
-        const statusCell = row.querySelector('.compress-status');
-        if (status === 'compressing') {
-            if (fill) fill.style.width = '50%';
-            if (statusCell) statusCell.textContent = 'Processing...';
-        } else if (status === 'done') {
-            if (fill) { fill.style.width = '100%'; fill.style.backgroundColor = 'var(--accent-green, #34c759)'; }
-            if (statusCell) { statusCell.textContent = '✅ Done'; statusCell.style.color = 'var(--accent-green, #34c759)'; }
+    if (!row) return;
+
+    const fill = document.getElementById(`compress-progress-${index}`);
+    const pct = document.getElementById(`compress-pct-${index}`);
+
+    if (status === 'compressing') {
+        if (fill) {
+            fill.style.width = '50%';
+            fill.style.backgroundColor = '';
         }
+        if (pct) {
+            pct.textContent = '50%';
+            pct.className = 'progress-pct';
+        }
+        updateCompressStatus(index, 'compressing');
+    } else if (status === 'done') {
+        if (fill) {
+            fill.style.width = '100%';
+            fill.style.backgroundColor = 'var(--accent-green, #34c759)';
+        }
+        if (pct) {
+            pct.textContent = '100%';
+            pct.className = 'progress-pct done';
+        }
+        updateCompressStatus(index, 'done');
+    } else if (status === 'error') {
+        if (fill) {
+            fill.style.width = '0%';
+            fill.style.backgroundColor = 'var(--accent-red, #ff3b30)';
+        }
+        if (pct) {
+            pct.textContent = '0%';
+            pct.className = 'progress-pct error';
+        }
+        updateCompressStatus(index, 'error');
     }
 }
 
 function updateCompressError(index, error) {
     const row = document.getElementById(`compress-row-${index}`);
-    if (row) {
-        const statusCell = row.querySelector('.compress-status');
-        if (statusCell) {
-            statusCell.innerHTML = `<span style="cursor: pointer; text-decoration: underline;">❌ Error</span>`;
-            statusCell.style.color = '#ff3b30';
-            statusCell.onclick = () => alert("Compression Error Details:\n\n" + error);
-        }
+    if (!row) return;
+
+    const fill = document.getElementById(`compress-progress-${index}`);
+    const pct = document.getElementById(`compress-pct-${index}`);
+    const statusCell = row.querySelector('.status-cell');
+
+    if (fill) {
+        fill.style.width = '0%';
+        fill.style.backgroundColor = 'var(--accent-red, #ff3b30)';
+    }
+
+    if (pct) {
+        pct.textContent = '0%';
+        pct.className = 'progress-pct error';
+    }
+
+    if (statusCell) {
+        statusCell.className = 'status-cell status-error';
+        statusCell.innerHTML = `
+            <span class="status-icon"></span>
+            <span title="${escapeHtml(error || 'Compression failed')}">Error</span>
+        `;
     }
 }
 
@@ -1989,7 +2111,7 @@ function renderBatchStatusCell(index, status, details = []) {
     const row = document.getElementById(`batch-row-${index}`);
     if (!row) return;
 
-    const icons = { downloading: '⏳', done: '✅', error: '❌', waiting: '⏳', retrying: '🔄', paused: '⏸', canceled: '✕' };
+    const icons = { downloading: ' ', done: '✅', error: '❌', waiting: '⏳', retrying: '🔄', paused: '⏸', canceled: '✕' };
     const texts = { downloading: 'Downloading', done: 'Done', error: 'Error', waiting: 'Waiting', retrying: 'Retrying', paused: 'Paused', canceled: 'Canceled' };
     const statusCell = row.querySelector('td:nth-child(4)');
     if (!statusCell) return;

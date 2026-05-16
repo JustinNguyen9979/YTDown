@@ -32,16 +32,17 @@
 html, body {
     margin: 0;
     padding: 0;
+    width: 100%;
     overflow: hidden;
-    height: auto !important; /* Không cho phép giãn theo cửa sổ */
+    height: auto;
 }
 
 .container {
     width: 100%;
     display: flex;
     flex-direction: column;
-    padding: 20px 20px 2px 20px;
-    height: auto !important; /* Luôn ôm sát nội dung */
+    padding: 20px 20px 12px 20px;
+    box-sizing: border-box;
 }
 
 body {
@@ -455,7 +456,6 @@ body {
     border-bottom-color: var(--accent-blue);
 }
 
-/* Tab Content */
 .tab-content {
     display: none;
     animation: fadeIn 0.3s ease;
@@ -709,12 +709,13 @@ select:focus {
 .save-path {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
+    margin-top: 8px;
 }
 
 .path-group {
     display: flex;
-    gap: 8px;
+    gap: 10px;
 }
 
 .path-input {
@@ -779,13 +780,14 @@ select:focus {
 }
 
 .download-btn:not(:disabled) {
-    box-shadow: 0 0 20px rgba(10, 132, 255, 0.4);
+  box-shadow: none;
 }
 
 .download-btn:hover:not(:disabled) {
-    background: #0071d5;
-    transform: scale(1.02);
-    box-shadow: 0 0 30px rgba(10, 132, 255, 0.6);
+  background: #0071d5;
+  transform: none;
+  filter: brightness(1.05);
+  box-shadow: 0 0 24px rgba(10, 132, 255, 0.45);
 }
 
 .download-btn:active:not(:disabled) {
@@ -801,6 +803,7 @@ select:focus {
 .batch-download-actions {
     display: flex;
     gap: 10px;
+    margin-top: 14px;
 }
 
 .batch-download-actions .download-btn {
@@ -848,9 +851,10 @@ select:focus {
 
 .batch-buttons {
     display: flex;
-    gap: 8px;
+    gap: 10px;
     align-items: center;
-    position: relative; /* Thêm anchor cho lớp phủ */
+    position: relative;
+    margin-bottom: 12px;
 }
 
 .batch-input {
@@ -1120,12 +1124,16 @@ select:focus {
 
 /* Batch Progress Table */
 .batch-progress {
-    margin-top: 12px;
-    /* max-height: 200px; Giới hạn chiều cao */
-    /* overflow-y: auto; */
-    border: 1px solid transparent;
-    border-radius: 8px;
-    transition: all 0.3s ease;
+  margin-top: 0;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition: all 0.3s ease;
 }
 
 /* Chỉ hiện border khi có dữ liệu */
@@ -1134,26 +1142,60 @@ select:focus {
 }
 
 .batch-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-    margin-bottom: 0px; /* Giảm margin để khít container */
-    table-layout: fixed;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-bottom: 0;
+  table-layout: fixed;
+}
+
+.batch-table thead,
+.batch-table tbody {
+  width: 100%;
 }
 
 .batch-table thead {
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border-color);
-    /* position: sticky; */
-    top: 0;
-    z-index: 10;
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
-.batch-table th, .batch-table td {
-    padding: 12px 10px;
-    text-align: left;
-    white-space: nowrap;
-    overflow: hidden;
+.batch-table thead::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--border-color);
+}
+
+.batch-table tbody {
+  flex: 1;
+}
+
+.batch-table th,
+.batch-table td {
+  position: relative;
+  padding: 12px 18px;
+}
+
+.batch-table th::after,
+.batch-table td::after {
+  content: "";
+  position: absolute;
+  top: 11px;
+  right: 4px;
+  width: 1px;
+  height: calc(100% - 22px);
+  background: var(--border-color);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.batch-table th:last-child::after,
+.batch-table td:last-child::after {
+  display: none;
 }
 
 /* Định nghĩa độ rộng cụ thể cho từng cột */
@@ -1187,14 +1229,32 @@ select:focus {
 #galleryTable th:nth-child(4), #galleryTable td:nth-child(4) { width: 120px; min-width: 120px; }
 
 /* Compress Table Column Widths */
-#compressTable th:nth-child(1), #compressTable td:nth-child(1) { width: 35px; min-width: 35px; }
-#compressTable th:nth-child(2), #compressTable td:nth-child(2) { 
-    width: 100%; 
-    max-width: 0; 
-    text-overflow: ellipsis;
+#compressTable th:nth-child(1),
+#compressTable td:nth-child(1) {
+  width: 35px;
+  min-width: 35px;
 }
-#compressTable th:nth-child(3), #compressTable td:nth-child(3) { width: 130px; min-width: 130px; }
-#compressTable th:nth-child(4), #compressTable td:nth-child(4) { width: 120px; min-width: 120px; }
+
+#compressTable th:nth-child(2),
+#compressTable td:nth-child(2) {
+  width: auto;
+  max-width: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-left: 4px;
+}
+
+#compressTable th:nth-child(3),
+#compressTable td:nth-child(3) {
+  width: 130px;
+  min-width: 130px;
+}
+
+#compressTable th:nth-child(4),
+#compressTable td:nth-child(4) {
+  width: 120px;
+  min-width: 120px;
+}
 
 .video-thumbnail-container {
     position: relative;
@@ -1316,6 +1376,12 @@ select:focus {
     vertical-align: middle;
 }
 
+.compress-status {
+  overflow: visible !important;
+  display: table-cell;
+  vertical-align: middle;
+}
+
 .status-with-tooltip {
     display: inline-flex;
     align-items: center;
@@ -1425,14 +1491,6 @@ select:focus {
     width: 100%;
 }
 
-.file-list-container {
-    max-height: 400px; /* Tăng giới hạn lên 400px cho đồng bộ */
-    overflow-y: auto;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--bg-secondary);
-}
-
 #compress .settings {
     margin-top: 10px;
 }
@@ -1492,19 +1550,25 @@ select:focus {
 }
 
 .custom-select-options {
-    position: absolute;
-    top: calc(100% + 5px);
-    left: 0;
-    right: 0;
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-    z-index: 1000;
-    display: none;
-    max-height: 250px;
-    overflow-y: auto;
-    animation: slideDown 0.2s ease;
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+  z-index: 1000;
+  display: none;
+  max-height: min(250px, var(--dropdown-max-height, 250px));
+  overflow-y: auto;
+  overflow-x: hidden;
+  animation: slideDown 0.2s ease;
+}
+
+.custom-select-container.open-up .custom-select-options {
+  top: auto;
+  bottom: calc(100% + 5px);
 }
 
 @keyframes slideDown {
@@ -1860,13 +1924,12 @@ kbd {
 
 /* ✅ Scroll chỉ ở tbody — scrollbar không còn đè lên header */
 .batch-table tbody {
-  display: block;
-  max-height: 160px;       /* ~3 rows */
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.2) transparent;
+    display: table-row-group;
+    max-height: none;
+    height: auto;
+    overflow: visible;
 }
+
 .batch-table tbody::-webkit-scrollbar { width: 5px; }
 .batch-table tbody::-webkit-scrollbar-track { background: transparent; }
 .batch-table tbody::-webkit-scrollbar-thumb {
@@ -2122,4 +2185,150 @@ kbd {
   padding: 10px 18px 14px; text-align: center;
   font-size: 11px; color: var(--text-secondary); opacity: 0.55;
   border-top: 1px solid var(--border-color);  /* ← đổi */
+}
+
+.app-split-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) 1px minmax(420px, 0.95fr);
+  gap: 18px;
+  align-items: start;
+  width: 100%;
+  min-height: 0;
+}
+
+.app-pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-pane--config,
+.app-pane--result {
+  min-width: 0;
+}
+
+.app-pane--config {
+  min-height: 0;
+  overflow: hidden;
+  padding-right: 4px;
+}
+
+.app-pane--result {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+  align-self: stretch;
+  padding-bottom: 16px;
+}
+
+.app-pane-divider {
+  width: 6px;
+  align-self: stretch;
+  margin-top: 0;
+  margin-bottom: 16px;
+  cursor: col-resize;
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    rgba(127, 127, 127, 0.28) 0%,
+    rgba(127, 127, 127, 0.18) 100%
+  );
+  box-shadow:
+    inset 1px 0 0 rgba(255, 255, 255, 0.18),
+    inset -1px 0 0 rgba(0, 0, 0, 0.12);
+  opacity: 0.95;
+}
+
+.tab-content.active {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.app-pane--config > *,
+.app-pane--result > * {
+  flex-shrink: 0;
+}
+
+.batch-progress,
+.file-list-container,
+.error-log-container {
+  min-height: 0;
+}
+
+.app-pane--result .batch-progress {
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.app-pane--result .error-log-container {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0;
+  margin-bottom: 0;
+  max-height: 140px;
+}
+
+.app-pane--config .batch-input {
+  min-height: 110px;
+  max-height: 180px;
+}
+
+.app-pane--config .save-path .path-group,
+.app-pane--config .batch-download-actions,
+.app-pane--config .compress-controls-row {
+  width: 100%;
+}
+
+.app-pane--config .download-btn,
+.app-pane--config .browse-btn {
+  min-height: 40px;
+}
+
+@media (max-width: 1180px) {
+  .app-split-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .app-pane-divider {
+    display: none;
+  }
+
+  .app-pane--result {
+    border-top: 1px solid var(--border-color);
+    padding-top: 14px;
+  }
+}
+
+.app-pane--config {
+  min-height: 0;
+  overflow: hidden;
+  padding-right: 4px;
+  padding-bottom: 16px;
+}
+
+.app-pane--result .batch-progress {
+  position: relative;
+}
+
+.batch-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.batch-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg-primary);
+  box-shadow: inset 0 -1px 0 var(--border-color);
+  padding-top: 14px;
+  padding-bottom: 14px;
 }
