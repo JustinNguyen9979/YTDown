@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,12 @@ import (
 
 	"github.com/browserutils/kooky"
 	_ "github.com/browserutils/kooky/browser/all"
+	kookybrave "github.com/browserutils/kooky/browser/brave"
+	kookychrome "github.com/browserutils/kooky/browser/chrome"
+	kookychromium "github.com/browserutils/kooky/browser/chromium"
+	kookyedge "github.com/browserutils/kooky/browser/edge"
+	kookyfirefox "github.com/browserutils/kooky/browser/firefox"
+	kookyopera "github.com/browserutils/kooky/browser/opera"
 )
 
 // CookieMode defines how cookies are handled
@@ -84,51 +91,163 @@ var manager = &CookieManager{
 
 var cookieNamePattern = regexp.MustCompile(`^[A-Za-z0-9!#$%&'*+\-.^_` + "`" + `|~]+$`)
 
+type tempBrowserSource struct {
+	cookiePath  string
+	profilePath string
+	cleanup     func()
+}
+
 func normalizeBrowserName(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
 }
 
-func copyDBToTemp(dbPath string) (string, func(), error) {
-	tmpDir, err := os.MkdirTemp("", "ytdown-db-*")
-	if err != nil {
-		return "", nil, fmt.Errorf("cannot create temp dir: %w", err)
-	}
-	cleanup := func() { os.RemoveAll(tmpDir) }
-
-	// Giữ nguyên tên file gốc để kooky nhận ra đúng (ví dụ: "Cookies", "cookies.sqlite")
-	tmpPath := filepath.Join(tmpDir, filepath.Base(dbPath))
-
-	src, err := os.Open(dbPath)
-	if err != nil {
-		cleanup()
-		return "", nil, fmt.Errorf("cannot open browser database: %w", err)
-	}
-	defer src.Close()
-
-	dst, err := os.Create(tmpPath)
-	if err != nil {
-		cleanup()
-		return "", nil, fmt.Errorf("cannot create temp database: %w", err)
-	}
-	defer dst.Close()
-
-	if _, err := io.Copy(dst, src); err != nil {
-		cleanup()
-		return "", nil, fmt.Errorf("cannot copy browser database: %w", err)
-	}
-
-	return tmpPath, cleanup, nil
+func shouldUseTemporaryBrowserStore() bool {
+	return runtime.GOOS == "linux" || runtime.GOOS == "windows"
 }
 
-func copyStoreDBToTemp(store kooky.CookieStore) (string, func(), error) {
+func isChromiumBasedBrowser(browser string) bool {
+	switch normalizeBrowserName(browser) {
+	case "chrome", "chromium", "edge", "brave", "opera", "vivaldi":
+		return true
+	default:
+		return false
+	}
+}
+
+func copyFileIfExists(src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if info.IsDir() {
+		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func buildTempBrowserSourceFromStore(store kooky.CookieStore, browser string) (*tempBrowserSource, error) {
+	if store == nil {
+		return nil, fmt.Errorf("cookie store is nil")
+	}
+
 	dbPath := store.FilePath()
 	if dbPath == "" {
-		return "", nil, nil
+		return nil, fmt.Errorf("cookie store has no file path")
 	}
-	if _, err := os.Stat(dbPath); err != nil {
-		return "", nil, fmt.Errorf("database not found at %s: %w", dbPath, err)
+
+	profileDir := filepath.Dir(dbPath)
+	if filepath.Base(profileDir) == "Network" {
+		profileDir = filepath.Dir(profileDir)
 	}
-	return copyDBToTemp(dbPath)
+	if profileDir == "" {
+		return nil, fmt.Errorf("cannot derive profile directory from %s", dbPath)
+	}
+
+	tempRoot, err := os.MkdirTemp("", "ytdown-browser-*")
+	if err != nil {
+		return nil, fmt.Errorf("cannot create temp browser dir: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(tempRoot) }
+
+	tempProfileDir := filepath.Join(tempRoot, filepath.Base(profileDir))
+	tempCookiePath := filepath.Join(tempProfileDir, filepath.Base(dbPath))
+	if filepath.Base(filepath.Dir(dbPath)) == "Network" {
+		tempCookiePath = filepath.Join(tempProfileDir, "Network", filepath.Base(dbPath))
+	}
+
+	if err := copyFileIfExists(dbPath, tempCookiePath); err != nil {
+		cleanup()
+		return nil, fmt.Errorf("cannot copy cookie DB: %w", err)
+	}
+
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		if err := copyFileIfExists(dbPath+suffix, tempCookiePath+suffix); err != nil {
+			cleanup()
+			return nil, fmt.Errorf("cannot copy sidecar %s: %w", suffix, err)
+		}
+	}
+
+	if isChromiumBasedBrowser(browser) {
+		localState := filepath.Join(filepath.Dir(profileDir), "Local State")
+		if err := copyFileIfExists(localState, filepath.Join(tempRoot, "Local State")); err != nil {
+			cleanup()
+			return nil, fmt.Errorf("cannot copy Local State: %w", err)
+		}
+	}
+
+	return &tempBrowserSource{
+		cookiePath:  tempCookiePath,
+		profilePath: tempProfileDir,
+		cleanup:     cleanup,
+	}, nil
+}
+
+func openKookyStoreFromPath(browser, cookiePath string, filters ...kooky.Filter) (kooky.CookieStore, error) {
+	switch normalizeBrowserName(browser) {
+	case "chrome":
+		return kookychrome.CookieStore(cookiePath, filters...)
+	case "chromium":
+		return kookychromium.CookieStore(cookiePath, filters...)
+	case "firefox":
+		return kookyfirefox.CookieStore(cookiePath, filters...)
+	case "edge":
+		return kookyedge.CookieStore(cookiePath, filters...)
+	case "brave":
+		return kookybrave.CookieStore(cookiePath, filters...)
+	case "opera":
+		return kookyopera.CookieStore(cookiePath, filters...)
+	default:
+		return nil, fmt.Errorf("temporary kooky store unsupported for %s", browser)
+	}
+}
+
+func buildYTDLPBrowserSpec(browser, profilePath string) string {
+	if profilePath == "" {
+		return browser
+	}
+	return browser + ":" + filepath.ToSlash(profilePath)
+}
+
+func findBrowserStore(ctx context.Context, browser string) kooky.CookieStore {
+	browser = normalizeBrowserName(browser)
+
+	var fallback kooky.CookieStore
+	for _, store := range kooky.FindAllCookieStores(ctx) {
+		if !strings.EqualFold(store.Browser(), browser) {
+			continue
+		}
+		if store.IsDefaultProfile() {
+			return store
+		}
+		if fallback == nil {
+			fallback = store
+		}
+	}
+	return fallback
 }
 
 // writeCookiesToNetscapeFile converts a cookie header string (e.g., "name1=value1; name2=value2")
@@ -473,28 +592,30 @@ func (m *CookieManager) extractBrowserDataViaKooky(ctx context.Context, browser 
 			continue
 		}
 
-		// Copy file DB sang thư mục tạm trước khi kooky đọc
-		tmpPath, cleanupDB, copyErr := copyStoreDBToTemp(store)
-		if copyErr != nil {
-			LogWarning("[Cookie] cannot copy database for %s (%s): %v, skipping store",
-				browser, store.FilePath(), copyErr)
-			continue
-		}
-		if cleanupDB != nil {
-			defer cleanupDB()
-		}
-
-		// Nếu copy thành công, dùng store với file tạm (kooky đọc từ FilePath)
-		// Nếu không có FilePath (tmpPath == ""), vẫn thử đọc trực tiếp
 		readStore := store
-		if tmpPath != "" {
-			LogInfo("[Cookie] temp copy created for %s at: %s (Note: kooky.FindCookieStore does not exist, using original store for now)", browser, tmpPath)
-			// Tạo store mới từ file tạm
-			// tmpStore, tmpErr := kooky.FindCookieStore(ctx, tmpPath)
-			// if tmpErr == nil && tmpStore != nil {
-			// 	readStore = tmpStore
-			// 	defer readStore.Close()
-			// }
+		cleanupReadStore := func() {}
+		if shouldUseTemporaryBrowserStore() {
+			tempSource, tempErr := buildTempBrowserSourceFromStore(store, browser)
+			if tempErr != nil {
+				LogWarning("[Cookie] cannot prepare temporary store for %s (%s): %v, skipping store",
+					browser, store.FilePath(), tempErr)
+				continue
+			}
+
+			tempStore, tempErr := openKookyStoreFromPath(browser, tempSource.cookiePath, filters...)
+			if tempErr != nil {
+				tempSource.cleanup()
+				LogWarning("[Cookie] cannot open temporary store for %s (%s): %v, skipping store",
+					browser, tempSource.cookiePath, tempErr)
+				continue
+			}
+
+			readStore = tempStore
+			cleanupReadStore = func() {
+				_ = readStore.Close()
+				tempSource.cleanup()
+			}
+			LogInfo("[Cookie] reading %s cookies from temporary store: %s", browser, tempSource.cookiePath)
 		}
 
 		type cookieResult struct{ cookies []*kooky.Cookie }
@@ -514,9 +635,11 @@ func (m *CookieManager) extractBrowserDataViaKooky(ctx context.Context, browser 
 		case res := <-ch:
 			cookies = res.cookies
 		case <-time.After(10 * time.Second):
+			cleanupReadStore()
 			LogWarning("[Cookie] kooky timeout for store %s, skipping", browser)
 			continue
 		}
+		cleanupReadStore()
 		for _, c := range cookies {
 			// domain filter
 			if len(relevantDomains) > 0 {
@@ -756,9 +879,23 @@ func (m *CookieManager) extractWebSessionFromBrowser(ctx context.Context, browse
 	checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
+	browserSpec := browser
+	if shouldUseTemporaryBrowserStore() {
+		if store := findBrowserStore(ctx, browser); store != nil {
+			tempSource, tempErr := buildTempBrowserSourceFromStore(store, browser)
+			if tempErr != nil {
+				LogWarning("[Cookie] Cannot prepare temporary browser source for yt-dlp (%s): %v", browser, tempErr)
+			} else {
+				defer tempSource.cleanup()
+				browserSpec = buildYTDLPBrowserSpec(browser, tempSource.profilePath)
+				LogInfo("[Cookie] yt-dlp using temporary browser profile for %s: %s", browser, tempSource.profilePath)
+			}
+		}
+	}
+
 	fmt.Printf("[Cookie] 🛠️  Exporting cookies from %s to temporary file...\n", browser)
 	// Using --cookies to export to a file instead of --print-cookies
-	cmd := platform.CommandContext(checkCtx, ytdlp, "--cookies-from-browser", browser, "--cookies", tempCookieFile, "--no-warnings", "--no-playlist", extractionURL)
+	cmd := platform.CommandContext(checkCtx, ytdlp, "--cookies-from-browser", browserSpec, "--cookies", tempCookieFile, "--no-warnings", "--no-playlist", extractionURL)
 	_, err = cmd.CombinedOutput()
 
 	if err != nil {
@@ -1126,9 +1263,23 @@ func (m *CookieManager) extractBrowserDataViaYTDLP(ctx context.Context, browser 
 	cmdCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
+	browserSpec := browser
+	if shouldUseTemporaryBrowserStore() {
+		if store := findBrowserStore(ctx, browser); store != nil {
+			tempSource, tempErr := buildTempBrowserSourceFromStore(store, browser)
+			if tempErr != nil {
+				LogWarning("[Cookie] Cannot prepare temporary browser source for yt-dlp (%s): %v", browser, tempErr)
+			} else {
+				defer tempSource.cleanup()
+				browserSpec = buildYTDLPBrowserSpec(browser, tempSource.profilePath)
+				LogInfo("[Cookie] yt-dlp using temporary browser profile for %s: %s", browser, tempSource.profilePath)
+			}
+		}
+	}
+
 	// yt-dlp sẽ export cookies dù download fail → bỏ qua exit error
 	_ = platform.CommandContext(cmdCtx, ytdlp,
-		"--cookies-from-browser", browser,
+		"--cookies-from-browser", browserSpec,
 		"--cookies", tempCookieFile,
 		"--no-warnings",
 		"--no-playlist",
