@@ -30,8 +30,6 @@
 }
 
 html, body {
-    margin: 0;
-    padding: 0;
     width: 100%;
     overflow: hidden;
     height: auto;
@@ -424,6 +422,14 @@ body {
 }
 
 .url-input,
+.batch-input,
+select,
+.custom-select-trigger {
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+.url-input,
 .batch-input {
     flex: 1;
     padding: 12px 14px;
@@ -433,13 +439,13 @@ body {
     color: var(--text-primary);
     font-size: 14px;
     font-family: inherit;
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
     transition: all 0.2s ease;
 }
 
 .url-input:focus,
-.batch-input:focus {
+.batch-input:focus,
+select:focus,
+.cookie-inline-input:focus {
     outline: none;
     border-color: var(--accent-blue);
     box-shadow: 0 0 0 2px rgb(10, 132, 255, 0.2);
@@ -629,19 +635,11 @@ select {
     font-size: 14px;
     font-family: inherit;
     cursor: pointer;
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
     transition: all 0.2s ease;
 }
 
 select:hover {
     border-color: var(--accent-blue);
-}
-
-select:focus {
-    outline: none;
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 2px rgb(10, 132, 255, 0.2);
 }
 
 /* Save Path */
@@ -707,36 +705,57 @@ select:focus {
 /* Download Button */
 .download-btn {
     padding: 14px;
-    background: var(--accent-blue);
-    border: none;
-    border-radius: 10px;
+    background: linear-gradient(135deg, #0a84ff 0%, #005bb5 100%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
     color: white;
     font-size: 15px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     width: 100%;
+    position: relative;
+    overflow: hidden;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* Hiệu ứng tia sáng lướt qua (Shimmer) */
+.download-btn::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%; width: 50%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+    transform: skewX(-20deg);
+    transition: all 0.6s ease;
 }
 
 .download-btn:not(:disabled) {
-  box-shadow: none;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .download-btn:hover:not(:disabled) {
-  background: #0071d5;
-  transform: none;
-  filter: brightness(1.05);
-  box-shadow: 0 0 24px rgba(10, 132, 255, 0.45);
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #148eff 0%, #0066cc 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.download-btn:hover:not(:disabled)::before {
+    left: 150%;
 }
 
 .download-btn:active:not(:disabled) {
-    transform: scale(0.98);
+    transform: translateY(1px);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .download-btn:disabled {
-    opacity: 0.4;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border-color: var(--border-color);
+    opacity: 0.6;
     cursor: not-allowed;
     box-shadow: none;
+    text-shadow: none;
 }
 
 .batch-download-actions {
@@ -749,22 +768,40 @@ select:focus {
     flex: 1 1 0;
 }
 
+/* Pause Button */
 .pause-btn {
-    background: #ff9f0a;
+    background: linear-gradient(135deg, #ffb340 0%, #d98200 100%);
+}
+
+.pause-btn:not(:disabled) {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .pause-btn:hover:not(:disabled) {
-    background: #e38d00;
-    box-shadow: 0 0 30px rgba(255, 159, 10, 0.5);
+    background: linear-gradient(135deg, #ffbd59 0%, #f29100 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
+.pause-btn:active:not(:disabled) {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Cancel Button */
 .cancel-btn {
-    background: #ff453a;
+    background: linear-gradient(135deg, #ff5e55 0%, #d62820 100%);
+}
+
+.cancel-btn:not(:disabled) {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .cancel-btn:hover:not(:disabled) {
-    background: #e1382d;
-    box-shadow: 0 0 30px rgba(255, 69, 58, 0.45);
+    background: linear-gradient(135deg, #ff6b62 0%, #e62c23 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.cancel-btn:active:not(:disabled) {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .action-btn {
@@ -814,7 +851,7 @@ select:focus {
     z-index: 20;
 }
 
-.cookie-inline[hidden] {
+[hidden] {
     display: none !important;
 }
 
@@ -830,10 +867,6 @@ select:focus {
     white-space: nowrap;
 }
 
-.cookie-added-badge[hidden] {
-    display: none !important;
-}
-
 .cookie-inline-input {
     flex: 1;
     min-width: 0;
@@ -845,12 +878,6 @@ select:focus {
     font-size: 13px;
     font-family: inherit;
     transition: all 0.2s ease;
-}
-
-.cookie-inline-input:focus {
-    outline: none;
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 2px rgb(10, 132, 255, 0.2);
 }
 
 .cookie-confirm-btn {
@@ -888,18 +915,21 @@ select:focus {
     gap: 10px;
 }
 
-.cookie-dropdown-item:hover {
+.cookie-dropdown-item:hover,
+.custom-option:hover {
     background: var(--accent-blue);
     color: white;
 }
 
-.cookie-dropdown-item.selected {
+.cookie-dropdown-item.selected,
+.custom-option.selected {
     color: var(--accent-blue);
     font-weight: 600;
     background: rgba(10, 132, 255, 0.1);
 }
 
-.cookie-dropdown-item.selected:hover {
+.cookie-dropdown-item.selected:hover,
+.custom-option.selected:hover {
     color: white;
     background: var(--accent-blue);
 }
@@ -976,24 +1006,42 @@ select:focus {
   100% { background-position: -200% center; }
 }
 
-.progress-bar {
+/* ── Progress Bars ──────────────────────────── */
+.progress-bar,
+.batch-progress-bar {
   width: 100%;
-  height: 7px;
   background: rgba(255, 255, 255, 0.07);
   border-radius: 99px;
   overflow: hidden;
+}
+
+.progress-bar {
+  height: 7px;
   margin-bottom: 8px;
 }
 
-.progress-fill {
+.batch-progress-bar {
+  height: 5px;
+}
+
+.progress-fill,
+.batch-progress-fill {
   height: 100%;
   border-radius: 99px;
-  background: linear-gradient(90deg, #0a84ff 0%, #5ac8fa 50%, #0a84ff 100%);
   background-size: 200% 100%;
   width: 0%;
   animation: shimmer-flow 1.8s linear infinite;
-  box-shadow: 0 0 10px rgba(10, 132, 255, 0.65), 0 0 3px rgba(90, 200, 250, 0.5);
   transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.progress-fill {
+  background: linear-gradient(90deg, #0a84ff 0%, #5ac8fa 50%, #0a84ff 100%);
+  box-shadow: 0 0 10px rgba(10, 132, 255, 0.65), 0 0 3px rgba(90, 200, 250, 0.5);
+}
+
+.batch-progress-fill {
+  background: linear-gradient(90deg, #0a84ff, #5ac8fa);
+  box-shadow: 0 0 6px rgba(10, 132, 255, 0.5);
 }
 
 /* Khi done — chuyển sang xanh lá */
@@ -1008,26 +1056,6 @@ select:focus {
   background: linear-gradient(90deg, #ff3b30, #ff6b60);
   box-shadow: 0 0 10px rgba(255, 59, 48, 0.55);
   animation: none;
-}
-
-/* ── Batch Table Progress ──────────────────────────── */
-.batch-progress-bar {
-  width: 100%;
-  height: 5px;
-  background: rgba(255, 255, 255, 0.07);
-  border-radius: 99px;
-  overflow: hidden;
-}
-
-.batch-progress-fill {
-  height: 100%;
-  border-radius: 99px;
-  background: linear-gradient(90deg, #0a84ff, #5ac8fa);
-  background-size: 200% 100%;
-  width: 0%;
-  animation: shimmer-flow 1.8s linear infinite;
-  box-shadow: 0 0 6px rgba(10, 132, 255, 0.5);
-  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .progress-text {
@@ -1440,8 +1468,6 @@ select:focus {
     justify-content: space-between;
     align-items: center;
     transition: all 0.2s ease;
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
 }
 
 .custom-select-trigger:hover {
@@ -1503,22 +1529,6 @@ select:focus {
     color: var(--text-secondary);
     cursor: pointer;
     transition: all 0.1s ease;
-}
-
-.custom-option:hover {
-    background: var(--accent-blue);
-    color: white;
-}
-
-.custom-option.selected {
-    color: var(--accent-blue);
-    font-weight: 600;
-    background: rgba(10, 132, 255, 0.1);
-}
-
-.custom-option.selected:hover {
-    color: white;
-    background: var(--accent-blue);
 }
 
 /* Hide original select but keep it functional */
@@ -2227,4 +2237,4 @@ kbd {
   box-shadow: inset 0 -1px 0 var(--border-color);
   padding-top: 14px;
   padding-bottom: 14px;
-}
+};
