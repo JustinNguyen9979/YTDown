@@ -268,8 +268,11 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 		}
 		LogError("[DL] Command failed with error: %v", err)
 
-		// ← THAY: trả về nội dung lỗi thật thay vì "exit status 1"
 		if lastError != "" {
+			lowerErr := strings.ToLower(lastError)
+			if strings.Contains(lowerErr, "could not copy") && strings.Contains(lowerErr, "cookie database") {
+				return fmt.Errorf("Không thể sao chép cookie từ Chrome/Edge (do trình duyệt đang mở và khóa file). Bạn nên đóng hoàn toàn trình duyệt Chrome/Edge, chuyển sang dùng Firefox, hoặc dùng 'Cookie thủ công'.")
+			}
 			return fmt.Errorf("download failed: %s", lastError)
 		}
 		return fmt.Errorf("download failed: %v", err)
@@ -740,6 +743,18 @@ func classifyDownloadFailure(err error, cookiePresent bool) DownloadFailure {
 
 	message := strings.TrimSpace(err.Error())
 	lower := strings.ToLower(message)
+
+	if strings.Contains(lower, "could not copy") && strings.Contains(lower, "cookie database") {
+		return DownloadFailure{
+			RequiresCookie: false,
+			DisplayMessage: "Lỗi khóa Cookie Chrome/Edge",
+			Details: []string{
+				"Trình duyệt Chrome/Edge đang chạy và khóa file dữ liệu cookie.",
+				"Bạn nên tắt hoàn toàn Chrome/Edge, sử dụng trình duyệt Firefox (không bị khóa file), hoặc đổi sang dùng chế độ 'Cookie thủ công'.",
+			},
+		}
+	}
+
 	requiresCookie := looksLikeRestrictedAuthError(lower)
 
 	details := []string{}
@@ -797,6 +812,11 @@ func summarizeErrorForUI(message string) string {
 	message = strings.TrimSpace(message)
 	if message == "" {
 		return "Unknown yt-dlp error."
+	}
+
+	lower := strings.ToLower(message)
+	if strings.Contains(lower, "could not copy") && strings.Contains(lower, "cookie database") {
+		return "Không thể sao chép cookie từ Chrome/Edge (do trình duyệt đang mở và khóa file). Bạn nên đóng Chrome, dùng Firefox, hoặc dùng 'Cookie thủ công'."
 	}
 
 	lines := strings.Split(message, "\n")
