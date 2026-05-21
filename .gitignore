@@ -6,6 +6,7 @@ bin/
 *.dmg
 *.out
 *.test
+.antigravitycli
 ytdown
 build_output.txt
 coverage.out
@@ -40,6 +41,7 @@ frontend/dist/
 .env
 .env.local
 .env.*
+*.exe
 
 # Local temp files
 *.tmp
