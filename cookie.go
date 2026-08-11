@@ -273,8 +273,8 @@ func writeCookiesToNetscapeFile(headerString string, url string) (string, error)
 		domain = ".twitter.com"
 	} else if strings.Contains(url, "tiktok.com") {
 		domain = ".tiktok.com"
-	} else if strings.Contains(url, "xiaohongshu.com") || strings.Contains(url, "xhslink.com") {
-		domain = ".xiaohongshu.com"
+	} else if IsXiaohongshu(url) {
+		domain = ".xiaohongshu.com" // vẫn set cookie domain gốc vì server login dùng domain này
 	} else if strings.Contains(url, "pixiv.net") {
 		domain = ".pixiv.net"
 	} else if strings.Contains(url, "youtube.com") {
@@ -569,8 +569,8 @@ func (m *CookieManager) extractBrowserDataViaKooky(ctx context.Context, browser 
 	// Special domain logic
 	if strings.Contains(targetHost, "youtube.com") || strings.Contains(targetHost, "youtu.be") {
 		relevantDomains = []string{"youtube.com"} // ONLY youtube.com, removed google.com per user request
-	} else if strings.Contains(targetHost, "xiaohongshu.com") || strings.Contains(targetHost, "xhslink.com") {
-		relevantDomains = []string{"xiaohongshu.com", "xhslink.com"}
+	} else if IsXiaohongshu(targetHost) {
+		relevantDomains = xhsDomains // tự động lấy toàn bộ domain đã khai báo, gồm rednote.com
 	}
 
 	var filters []kooky.Filter
@@ -686,7 +686,7 @@ func (m *CookieManager) extractBrowserDataViaKooky(ctx context.Context, browser 
 				}
 			}
 
-			if (strings.Contains(c.Domain, "xiaohongshu.com") || strings.Contains(c.Domain, "xhslink.com")) && c.Name == "web_session" {
+			if IsXiaohongshu(c.Domain) && c.Name == "web_session" {
 				xhsSession = c.Value
 			}
 		}
@@ -799,6 +799,7 @@ var xhsDomains = []string{
 	"xiaohongshu.com",
 	"xhslink.com",
 	"redbookchina.com",
+	"rednote.com",
 }
 
 // IsXiaohongshu checks if the URL belongs to Xiaohongshu
@@ -1313,8 +1314,7 @@ func (m *CookieManager) extractBrowserDataViaYTDLP(ctx context.Context, browser 
 // buildExtractionURL trả về URL phù hợp để yt-dlp extract cookies đúng domain
 func buildExtractionURL(targetHost string) string {
 	switch {
-	case strings.Contains(targetHost, "xiaohongshu.com") ||
-		strings.Contains(targetHost, "xhslink.com"):
+	case IsXiaohongshu(targetHost):
 		return "https://www.xiaohongshu.com/"
 	case strings.Contains(targetHost, "instagram.com"):
 		return "https://www.instagram.com/"
@@ -1340,8 +1340,8 @@ func parseNetscapeCookieFileForDomain(content, targetHost string) ([]parsedCooki
 
 	// Build relevant domains
 	var relevantDomains []string
-	if strings.Contains(targetHost, "xiaohongshu.com") || strings.Contains(targetHost, "xhslink.com") {
-		relevantDomains = []string{"xiaohongshu.com", "xhslink.com"}
+	if IsXiaohongshu(targetHost) {
+		relevantDomains = xhsDomains
 	} else if strings.Contains(targetHost, "youtube.com") || strings.Contains(targetHost, "youtu.be") {
 		relevantDomains = []string{"youtube.com"}
 	} else if targetHost != "" {
@@ -1398,8 +1398,7 @@ func parseNetscapeCookieFileForDomain(content, targetHost string) ([]parsedCooki
 			Expires: expiry,
 		})
 
-		if name == "web_session" &&
-			(strings.Contains(domain, "xiaohongshu.com") || strings.Contains(domain, "xhslink.com")) {
+		if name == "web_session" && IsXiaohongshu(domain) {
 			xhsSession = value
 		}
 	}

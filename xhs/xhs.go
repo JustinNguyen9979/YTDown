@@ -70,6 +70,15 @@ const defaultAcceptLanguage = "zh-CN,zh;q=0.9,en;q=0.8"
 const defaultAccept = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
 const defaultTimeout = 30 * time.Second
 
+func InferReferer(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return defaultReferer
+	}
+	host := strings.TrimPrefix(u.Host, "www.")
+	return "https://www." + host + "/"
+}
+
 // Fetch giữ tương thích ngược với API cũ.
 // Ưu tiên dùng FetchWithOptions khi cần truyền tham số từ nguồn bên ngoài.
 func Fetch(ctx context.Context, noteURL, cookie, format string) (*NoteInfo, error) {
@@ -145,7 +154,7 @@ func newRequest(ctx context.Context, method, targetURL string, opts FetchOptions
 		return nil, fmt.Errorf("xhs: tạo request lỗi: %w", err)
 	}
 	req.Header.Set("User-Agent", chooseString(opts.UserAgent, defaultUserAgent))
-	req.Header.Set("Referer", chooseString(opts.Referer, defaultReferer))
+	req.Header.Set("Referer", chooseString(opts.Referer, InferReferer(targetURL)))
 	req.Header.Set("Accept-Language", chooseString(opts.AcceptLanguage, defaultAcceptLanguage))
 	req.Header.Set("Accept", defaultAccept)
 	if opts.Cookie != "" {
