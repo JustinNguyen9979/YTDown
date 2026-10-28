@@ -16,8 +16,74 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+type xhsDownloadRoute uint8
+
+const (
+	xhsDownloadDirect xhsDownloadRoute = iota
+	xhsDownloadYTDLP
+)
+
+func galleryVideoCookieHeader(options xhsmodule.FetchOptions) string {
+	return options.Cookie
+}
+
+func routeXHSNote(noteType string) xhsDownloadRoute {
+	if noteType == "video" {
+		return xhsDownloadYTDLP
+	}
+	return xhsDownloadDirect
+}
+
+func downloadXHSNoteVideo(ctx context.Context, index int, noteURL, savePath string, threads int) error {
+	fetchOptions, err := getXHSFetchOptions(ctx)
+	if err != nil {
+		return err
+	}
+	info, err := xhsmodule.FetchWithOptions(ctx, noteURL, fetchOptions)
+	if err != nil {
+		return fmt.Errorf("xhs: analyze note video failed: %w", err)
+	}
+	if routeXHSNote(info.Type) != xhsDownloadYTDLP {
+		return fmt.Errorf("xhs: the selected note contains no video")
+	}
+	return downloadXHSVideoWithSession(ctx, index, info.VideoURL, info.Title, info.Author, savePath, threads, fetchOptions.Cookie)
+}
+
+func downloadXHSVideo(ctx context.Context, index int, videoURL, title, author string, options GalleryDownloadOptions) error {
+	return downloadXHSVideoWithSession(ctx, index, videoURL, title, author, options.SavePath, options.Threads, "")
+}
+
+func downloadXHSVideoWithSession(ctx context.Context, index int, videoURL, title, author, savePath string, threads int, cookieHeader string) error {
+	if videoURL == "" {
+		return fmt.Errorf("xhs: video note has empty video URL")
+	}
+	if _, err := url.ParseRequestURI(videoURL); err != nil {
+		return fmt.Errorf("xhs: invalid video URL: %w", err)
+	}
+
+	targetDir := savePath
+	if author != "" {
+		targetDir = filepath.Join(targetDir, sanitizeFolderName(author))
+	}
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		return fmt.Errorf("create xhs output dir failed: %w", err)
+	}
+
+	if err := downloadVideoWithXHSSession(ctx, index, videoURL, "MP4", "Best", targetDir, true, threads, cookieHeader, true); err != nil {
+		return fmt.Errorf("xhs video download failed: %w", err)
+	}
+	runtime.EventsEmit(ctx, "video-title", map[string]interface{}{
+		"index": index,
+		"title": title,
+	})
+	return nil
+}
+
 func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, options GalleryDownloadOptions) error {
-	fetchOptions := getXHSFetchOptions(ctx)
+	fetchOptions, err := getXHSFetchOptions(ctx)
+	if err != nil {
+		return err
+	}
 	info, err := xhsmodule.FetchWithOptions(ctx, url, fetchOptions)
 	if err != nil {
 		return err
@@ -27,6 +93,10 @@ func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, opti
 		"index": index,
 		"title": info.Title,
 	})
+
+	if routeXHSNote(info.Type) == xhsDownloadYTDLP {
+		return downloadXHSVideoWithSession(ctx, index, info.VideoURL, info.Title, info.Author, options.SavePath, options.Threads, galleryVideoCookieHeader(fetchOptions))
+	}
 
 	targetDir := options.SavePath
 	if info.Author != "" {
@@ -120,7 +190,7 @@ func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, opti
 	return nil
 }
 
-func getXHSFetchOptions(ctx context.Context) xhsmodule.FetchOptions {
+func getXHSFetchOptions(ctx context.Context) (xhsmodule.FetchOptions, error) {
 	manager.mu.RLock()
 	cfg := manager.config
 	manager.mu.RUnlock()
@@ -134,9 +204,15 @@ func getXHSFetchOptions(ctx context.Context) xhsmodule.FetchOptions {
 	switch cfg.Mode {
 	case CookieModeBrowser:
 		if cfg.SelectedBrowser != "" {
-			if session := manager.extractWebSessionFromBrowser(ctx, cfg.SelectedBrowser, "https://www.xiaohongshu.com/"); session != "" {
-				opts.Cookie = "web_session=" + session
+			session, err := manager.extractWebSessionFromBrowser(ctx, cfg.SelectedBrowser, "https://www.xiaohongshu.com/")
+			if err != nil {
+				return xhsmodule.FetchOptions{}, err
 			}
+			cookie, err := xhsBrowserCookie(session)
+			if err != nil {
+				return xhsmodule.FetchOptions{}, err
+			}
+			opts.Cookie = cookie
 		}
 	case CookieModeManual:
 		if header := getGalleryCookieHeader(); header != "" {
@@ -148,7 +224,7 @@ func getXHSFetchOptions(ctx context.Context) xhsmodule.FetchOptions {
 		}
 	}
 
-	return opts
+	return opts, nil
 }
 
 func extractXHSSession(header string) string {
@@ -159,6 +235,13 @@ func extractXHSSession(header string) string {
 		}
 	}
 	return ""
+}
+
+func xhsBrowserCookie(session string) (string, error) {
+	if strings.TrimSpace(session) == "" {
+		return "", fmt.Errorf("no web_session cookie found in selected browser profile; sign in to Xiaohongshu in that profile and try again")
+	}
+	return "web_session=" + session, nil
 }
 
 func downloadXHSAsset(ctx context.Context, client *http.Client, opts xhsmodule.FetchOptions, assetURL, targetPath string) error {

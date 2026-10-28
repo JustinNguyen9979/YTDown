@@ -70,6 +70,18 @@ const defaultAcceptLanguage = "zh-CN,zh;q=0.9,en;q=0.8"
 const defaultAccept = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
 const defaultTimeout = 30 * time.Second
 
+func canonicalizeNoteURL(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("xhs: invalid note URL: %w", err)
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "rednote.com" || host == "www.rednote.com" {
+		u.Host = "www.xiaohongshu.com"
+	}
+	return u.String(), nil
+}
+
 func InferReferer(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Host == "" {
@@ -90,8 +102,12 @@ func Fetch(ctx context.Context, noteURL, cookie, format string) (*NoteInfo, erro
 
 // FetchWithOptions tải dữ liệu từ Xiaohongshu với tham số cấu hình truyền từ bên ngoài.
 func FetchWithOptions(ctx context.Context, noteURL string, opts FetchOptions) (*NoteInfo, error) {
+	canonicalURL, err := canonicalizeNoteURL(noteURL)
+	if err != nil {
+		return nil, err
+	}
 	// 1. Resolve short-link (xhslink.com) về URL note thật
-	resolvedURL, err := resolveURL(ctx, noteURL, opts)
+	resolvedURL, err := resolveURL(ctx, canonicalURL, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -172,6 +188,9 @@ func resolveURL(ctx context.Context, rawURL string, opts FetchOptions) (string, 
 	client := &http.Client{
 		Timeout: effectiveTimeout(opts),
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if strings.EqualFold(strings.TrimRight(req.URL.Path, "/"), "/login") {
+				return fmt.Errorf("Xiaohongshu redirected to login; sign in to Xiaohongshu in the selected browser and ensure its web_session cookie is available")
+			}
 			if len(via) >= 10 {
 				return fmt.Errorf("stopped after 10 redirects")
 			}

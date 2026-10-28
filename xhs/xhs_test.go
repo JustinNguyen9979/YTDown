@@ -10,6 +10,36 @@ import (
 	"testing"
 )
 
+func TestCanonicalizeNoteURL(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "rednote note maps to xiaohongshu preserving path and query",
+			input: "https://www.rednote.com/discovery/item/6a44b3f5000000001700b738?source=webshare&xsec_token=synthetic",
+			want:  "https://www.xiaohongshu.com/discovery/item/6a44b3f5000000001700b738?source=webshare&xsec_token=synthetic",
+		},
+		{
+			name:  "xiaohongshu URL remains unchanged",
+			input: "https://www.xiaohongshu.com/explore/64bca1234def567890abcd12?xsec_token=synthetic",
+			want:  "https://www.xiaohongshu.com/explore/64bca1234def567890abcd12?xsec_token=synthetic",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := canonicalizeNoteURL(tt.input)
+			if err != nil {
+				t.Fatalf("canonicalizeNoteURL() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("canonicalizeNoteURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseNoteID(t *testing.T) {
 	t.Parallel()
 
@@ -48,6 +78,21 @@ func TestParseNoteID(t *testing.T) {
 				t.Fatalf("parseNoteID() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFetchWithOptionsExplainsLoginRedirect(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/login?redirect=%2Fdiscovery%2Fitem%2Fsynthetic", http.StatusFound)
+	}))
+	defer server.Close()
+
+	_, err := FetchWithOptions(context.Background(), server.URL+"/discovery/item/6a44b3f5000000001700b738", FetchOptions{})
+	if err == nil {
+		t.Fatal("FetchWithOptions() expected a login redirect error")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "login") || !strings.Contains(err.Error(), "web_session") {
+		t.Fatalf("FetchWithOptions() error = %q, want actionable login/web_session guidance", err)
 	}
 }
 

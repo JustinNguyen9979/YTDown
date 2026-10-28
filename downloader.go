@@ -87,8 +87,29 @@ func ResolveShortURL(url string, userAgent string) string {
 	return url
 }
 
-// DownloadVideo downloads a video using yt-dlp
+type videoDownloadRoute uint8
+
+const (
+	videoDownloadYTDLP videoDownloadRoute = iota
+	videoDownloadXHSNote
+)
+
+func routeVideoDownload(rawURL string) videoDownloadRoute {
+	if isXHSNoteURL(rawURL) {
+		return videoDownloadXHSNote
+	}
+	return videoDownloadYTDLP
+}
+
+// DownloadVideo downloads a video using yt-dlp or the XHS note parser.
 func DownloadVideo(ctx context.Context, index int, url, format, quality, savePath string, noPlaylist bool, concurrentFragments int) error {
+	if routeVideoDownload(url) == videoDownloadXHSNote {
+		return downloadXHSNoteVideo(ctx, index, url, savePath, concurrentFragments)
+	}
+	return downloadVideoWithXHSSession(ctx, index, url, format, quality, savePath, noPlaylist, concurrentFragments, "", false)
+}
+
+func downloadVideoWithXHSSession(ctx context.Context, index int, url, format, quality, savePath string, noPlaylist bool, concurrentFragments int, xhsSession string, metadataKnown bool) error {
 	ytdlpPath := getResourcePath("yt-dlp")
 	ffmpegPath := getResourcePath("ffmpeg")
 
@@ -102,19 +123,41 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 		LogInfo("[DL] Using system ffmpeg from: %s", ffmpegPath)
 	}
 
-	// Fetch metadata first to get title, thumbnail, and ID
-	info, _ := GetVideoMetadata(ctx, url)
-	if info != nil {
-		runtime.EventsEmit(ctx, "video-info", map[string]interface{}{
-			"index":     index,
-			"title":     info.Title,
-			"thumbnail": info.Thumbnail,
-			"id":        info.ID,
-		})
+	var xhsCookieArgs []string
+	var cleanupXHSCookie func()
+	if xhsSession != "" && IsXiaohongshu(url) {
+		var err error
+		xhsCookieArgs, cleanupXHSCookie, err = manager.xhsSessionCookieArgsForDownload(extractXHSSession(xhsSession), url)
+		if err != nil {
+			return err
+		}
+		if cleanupXHSCookie != nil {
+			defer cleanupXHSCookie()
+		}
+	}
+
+	// XHS note metadata was already fetched by its parser. Avoid a second yt-dlp
+	// cookie-from-browser export; other sources keep the existing metadata path.
+	if !metadataKnown {
+		info, _ := GetVideoMetadata(ctx, url)
+		if info != nil {
+			runtime.EventsEmit(ctx, "video-info", map[string]interface{}{
+				"index":     index,
+				"title":     info.Title,
+				"thumbnail": info.Thumbnail,
+				"id":        info.ID,
+			})
+		}
 	}
 
 	// Build yt-dlp arguments based on format and quality
-	args := buildDownloadArgs(ctx, url, format, quality, savePath, ffmpegPath, noPlaylist, concurrentFragments)
+	args, err := buildDownloadArgs(ctx, url, format, quality, savePath, ffmpegPath, noPlaylist, concurrentFragments)
+	if err != nil {
+		return err
+	}
+	if len(xhsCookieArgs) > 0 {
+		args = replaceBrowserCookieArgsWithXHSSession(args, xhsCookieArgs)
+	}
 	args = append(args, url)
 	// Add verbose for better debugging in app.log
 	// args = append(args, "--verbose")
@@ -170,6 +213,7 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		LogProcessOutput("yt-dlp", line)
 
 		// fmt.Println("[yt-dlp]", line)
 
@@ -177,7 +221,7 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 		// We'll use LogDebug for regular progress to avoid cluttering INFO if needed,
 		// but since we want to catch "hangs", INFO is safer for now.
 		if strings.Contains(line, "ERROR:") || strings.Contains(line, "WARNING:") {
-			LogError("[yt-dlp] %s", line)
+			LogDownloadError("[yt-dlp] %s", line)
 			// ← THÊM: chỉ lưu ERROR, bỏ qua WARNING
 			if strings.Contains(line, "ERROR:") {
 				lastError = strings.TrimSpace(strings.TrimPrefix(line, "ERROR: "))
@@ -290,7 +334,7 @@ func DownloadVideo(ctx context.Context, index int, url, format, quality, savePat
 }
 
 // buildDownloadArgs builds yt-dlp command arguments
-func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmpegPath string, noPlaylist bool, concurrentFragments int) []string {
+func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmpegPath string, noPlaylist bool, concurrentFragments int) ([]string, error) {
 	args := []string{}
 
 	switch format {
@@ -422,7 +466,10 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 		args = append(args, "--user-agent", userAgent)
 	}
 
-	cookieArgs := manager.GetCookieArgs(ctx, "yt-dlp", url)
+	cookieArgs, cookieErr := manager.GetCookieArgs(ctx, "yt-dlp", url)
+	if cookieErr != nil {
+		return nil, cookieErr
+	}
 	if len(cookieArgs) > 0 {
 		args = append(args, cookieArgs...)
 		// Thêm player client phù hợp cho YouTube age-restricted khi có cookie
@@ -431,7 +478,7 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 		}
 	}
 
-	return args
+	return args, nil
 }
 
 // qualityToHeight converts quality string to pixel height
@@ -501,7 +548,11 @@ func GetVideoMetadata(ctx context.Context, url string) (*VideoInfo, error) {
 		args = append(args, "--referer", "https://www.xiaohongshu.com/")
 	}
 
-	if cookieArgs := manager.GetCookieArgs(ctx, "yt-dlp", url); len(cookieArgs) > 0 {
+	cookieArgs, cookieErr := manager.GetCookieArgs(ctx, "yt-dlp", url)
+	if cookieErr != nil {
+		return nil, cookieErr
+	}
+	if len(cookieArgs) > 0 {
 		args = append(args, cookieArgs...)
 	}
 	args = append(args, url)
@@ -562,6 +613,7 @@ func downloadThumbnailAsBase64(ctx context.Context, thumbnailURL string, url str
 
 	manager.mu.RLock()
 	selectedBrowser := manager.config.SelectedBrowser
+	selectedProfile := manager.config.SelectedProfile
 	manager.mu.RUnlock()
 	userAgent := GetUserAgent(selectedBrowser)
 
@@ -586,7 +638,10 @@ func downloadThumbnailAsBase64(ctx context.Context, thumbnailURL string, url str
 		req.Header.Set("Referer", "https://www.xiaohongshu.com/")
 		// Get web_session from cache if available
 		manager.state.mu.RLock()
-		xhsSession := manager.state.xhsSession
+		xhsSession := ""
+		if normalizeBrowserName(selectedBrowser) == manager.state.xhsSessionBrowser && selectedProfile == manager.state.xhsSessionProfile {
+			xhsSession = manager.state.xhsSession
+		}
 		manager.state.mu.RUnlock()
 
 		if xhsSession != "" {
@@ -647,7 +702,11 @@ func GetPlaylistVideos(ctx context.Context, url string) ([]string, error) {
 	}
 
 	args := []string{"--flat-playlist", "-J"}
-	if cookieArgs := manager.GetCookieArgs(ctx, "yt-dlp", url); len(cookieArgs) > 0 {
+	cookieArgs, cookieErr := manager.GetCookieArgs(ctx, "yt-dlp", url)
+	if cookieErr != nil {
+		return nil, cookieErr
+	}
+	if len(cookieArgs) > 0 {
 		args = append(args, cookieArgs...)
 	}
 	args = append(args, url)
@@ -736,7 +795,7 @@ type DownloadFailure struct {
 	Details        []string
 }
 
-func classifyDownloadFailure(err error, cookiePresent bool) DownloadFailure {
+func classifyDownloadFailure(err error, cookiePresent bool, sourceURL string) DownloadFailure {
 	if err == nil {
 		return DownloadFailure{}
 	}
@@ -760,7 +819,13 @@ func classifyDownloadFailure(err error, cookiePresent bool) DownloadFailure {
 	details := []string{}
 	if requiresCookie {
 		details = append(details, "Restricted video or login required.")
-		if cookiePresent {
+		if IsXiaohongshu(sourceURL) {
+			if cookiePresent {
+				details = append(details, "Xiaohongshu session cookie (web_session) is invalid or insufficient.")
+			} else {
+				details = append(details, "A Xiaohongshu login session (web_session) is required.")
+			}
+		} else if cookiePresent {
 			details = append(details, "Cookie invalid or insufficient.")
 			details = append(details, "Please copy a fresh YouTube cookie.")
 		} else {

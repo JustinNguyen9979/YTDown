@@ -1,5 +1,32 @@
 // Wails v2 application main logic
-// Add debug logging as soon as script loads
+// Keep console output visible in DevTools while forwarding a copy to the file logger.
+const nativeConsoleMethods = {};
+const pendingFrontendLogs = [];
+for (const level of ['log', 'info', 'warn', 'error', 'debug']) {
+    nativeConsoleMethods[level] = console[level].bind(console);
+    console[level] = (...args) => {
+        nativeConsoleMethods[level](...args);
+        const message = args.map(value => {
+            if (typeof value === 'string') return value;
+            try { return JSON.stringify(value); } catch { return String(value); }
+        }).join(' ');
+        const app = window.go?.main?.App;
+        if (app?.LogFrontendMessage) {
+            app.LogFrontendMessage(level, message).catch(() => {});
+        } else {
+            pendingFrontendLogs.push([level, message]);
+        }
+    };
+}
+
+function flushFrontendLogs() {
+    const app = window.go?.main?.App;
+    if (!app?.LogFrontendMessage) return;
+    for (const [level, message] of pendingFrontendLogs.splice(0)) {
+        app.LogFrontendMessage(level, message).catch(() => {});
+    }
+}
+
 console.log('[BOOT] app.js loaded');
 
 // Main app state
@@ -205,6 +232,18 @@ function waitForWails() {
     }
 }
 
+async function refreshSavedBrowserProfile() {
+    if (!state.wailsReady || state.cookieConfig.mode !== 'browser' || !state.cookieConfig.selected_browser) return;
+
+    try {
+        await window.go.main.App.UpdateCookieConfig('browser', state.cookieConfig.selected_browser);
+        state.cookieConfig = await window.go.main.App.GetCookieConfig();
+        refreshCookieUI();
+    } catch (err) {
+        showError(err?.message || String(err));
+    }
+}
+
 async function initializeApp() {
     console.log('[BOOT] App initialization started');
 
@@ -253,6 +292,7 @@ async function initializeApp() {
     setupGlobalStatusTooltip();
     setupCompressTab();
     setupGoEvents();
+    await refreshSavedBrowserProfile();
     setupWindowAutoHug();
     renderInfoTab();
     setupInfoTab();
@@ -308,20 +348,33 @@ function setupCookieDropdown() {
             item.innerHTML = `🌐 ${browserNames[id] || id}`;
             item.onclick = async (e) => {
                 e.stopPropagation();
+                if (item.dataset.busy === 'true') return;
+                item.dataset.busy = 'true';
+                item.setAttribute('aria-disabled', 'true');
                 try {
                     await window.go.main.App.UpdateCookieConfig('browser', id);
-                    state.cookieConfig.mode = 'browser';
-                    state.cookieConfig.selected_browser = id;
-                    state.cookieConfig.manual_header = '';
+                    const config = await window.go.main.App.GetCookieConfig();
+                    state.cookieConfig = {
+                        ...state.cookieConfig,
+                        mode: config.mode,
+                        selected_browser: config.selected_browser,
+                        selected_profile: config.selected_profile || '',
+                        manual_header: ''
+                    };
                     menu.hidden = true;
                     refreshCookieUI();
                 } catch (err) {
-                    console.error('Failed to update cookie config:', err);
+                    const message = err?.message || String(err);
+                    showError(message);
+                } finally {
+                    delete item.dataset.busy;
+                    item.removeAttribute('aria-disabled');
                 }
             };
             browserList.appendChild(item);
         });
     };
+
 
     mainBtns.forEach(btn => {
         if (!btn) return;
@@ -1022,6 +1075,9 @@ function setupWindowAutoHug() {
 function setupGoEvents() {
     try {
         if (window.runtime && window.runtime.EventsOn) {
+            window.runtime.EventsOn('cookie-permission-error', (message) => {
+                showError(String(message));
+            });
             // Handle missing dependencies
             window.runtime.EventsOn('dependencies-missing', async (data) => {
                 console.log('[DEPS] Missing dependencies detected:', data);
@@ -2209,16 +2265,48 @@ function closeVideoModal() {
 }
 
 async function setupInfoTab() {
-    if (state.wailsReady) {
-        try {
-            const appInfo = await window.go.main.App.GetAppInfo();
-            const versionEl = document.getElementById('appVersion');
-            if (versionEl && appInfo.version) {
-                versionEl.textContent = appInfo.version;
-            }
-        } catch (err) {
-            console.error('[INFO] Error loading app info:', err);
+    if (!state.wailsReady) return;
+    try {
+        flushFrontendLogs();
+        const app = window.go.main.App;
+        const appInfo = await app.GetAppInfo();
+        const versionEl = document.getElementById('appVersion');
+        if (versionEl && appInfo.version) versionEl.textContent = appInfo.version;
+
+        const clearOnExit = document.getElementById('clearLogsOnExit');
+        const logStatus = document.getElementById('logSettingsStatus');
+        if (clearOnExit) {
+            clearOnExit.checked = await app.GetClearLogsOnExit();
+            clearOnExit.addEventListener('change', async () => {
+                clearOnExit.disabled = true;
+                try {
+                    await app.SetClearLogsOnExit(clearOnExit.checked);
+                    if (logStatus) logStatus.textContent = 'Log setting saved.';
+                } catch (err) {
+                    clearOnExit.checked = !clearOnExit.checked;
+                    if (logStatus) logStatus.textContent = `Could not save log setting: ${err?.message || err}`;
+                } finally {
+                    clearOnExit.disabled = false;
+                }
+            });
         }
+
+        const clearButton = document.getElementById('clearLogButton');
+        if (clearButton) {
+            clearButton.addEventListener('click', async () => {
+                clearButton.disabled = true;
+                try {
+                    await app.ClearLog();
+                    if (logStatus) logStatus.textContent = 'Log cleared. New entries will continue to be recorded.';
+                } catch (err) {
+                    if (logStatus) logStatus.textContent = `Could not clear log: ${err?.message || err}`;
+                } finally {
+                    clearButton.disabled = false;
+                }
+            });
+        }
+    } catch (err) {
+        console.error('[INFO] Error loading app info or log settings:', err);
     }
 }
 
@@ -2310,6 +2398,18 @@ function renderInfoTab() {
         <ul>
           ${tools.map(t => `<li><strong>${t.name}</strong> — ${t.desc}</li>`).join('')}
         </ul>
+      </div>
+
+      <div class="info-section">
+        <h3>Log settings</h3>
+        <div class="log-settings-row">
+          <label for="clearLogsOnExit">
+            <input type="checkbox" id="clearLogsOnExit">
+            Delete session log when YTDown closes
+          </label>
+          <button type="button" class="action-btn secondary" id="clearLogButton">Clear log now</button>
+        </div>
+        <p id="logSettingsStatus" class="log-settings-status" role="status" aria-live="polite"></p>
       </div>
 
       <div class="info-section">

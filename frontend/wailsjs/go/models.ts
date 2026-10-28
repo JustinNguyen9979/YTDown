@@ -77,6 +77,7 @@ export namespace main {
 	export class CookieConfig {
 	    mode: string;
 	    selected_browser: string;
+	    selected_profile?: string;
 	    manual_header?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -87,6 +88,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.mode = source["mode"];
 	        this.selected_browser = source["selected_browser"];
+	        this.selected_profile = source["selected_profile"];
 	        this.manual_header = source["manual_header"];
 	    }
 	}
