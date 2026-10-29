@@ -15,6 +15,7 @@ package xhs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -102,12 +103,74 @@ func Fetch(ctx context.Context, noteURL, cookie, format string) (*NoteInfo, erro
 
 // FetchWithOptions tải dữ liệu từ Xiaohongshu với tham số cấu hình truyền từ bên ngoài.
 func FetchWithOptions(ctx context.Context, noteURL string, opts FetchOptions) (*NoteInfo, error) {
-	canonicalURL, err := canonicalizeNoteURL(noteURL)
+	return fetchWithDomainFallback(ctx, noteURL, opts, fetchNote)
+}
+
+func fetchWithDomainFallback(ctx context.Context, noteURL string, opts FetchOptions, fetch func(context.Context, string, FetchOptions) (*NoteInfo, error)) (*NoteInfo, error) {
+	urls, err := noteURLsForFallback(noteURL)
 	if err != nil {
 		return nil, err
 	}
-	// 1. Resolve short-link (xhslink.com) về URL note thật
-	resolvedURL, err := resolveURL(ctx, canonicalURL, opts)
+
+	info, firstErr := fetch(ctx, urls[0], opts)
+	if firstErr == nil || len(urls) == 1 || ctx.Err() != nil || errors.Is(firstErr, context.Canceled) || errors.Is(firstErr, context.DeadlineExceeded) {
+		return info, firstErr
+	}
+
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	fallbackInfo, fallbackErr := fetch(ctx, urls[1], opts)
+	if fallbackErr != nil {
+		return nil, fmt.Errorf("xhs: primary domain failed: %v; alternate domain failed: %w", firstErr, fallbackErr)
+	}
+	return fallbackInfo, nil
+}
+
+func noteURLsForFallback(rawURL string) ([]string, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("xhs: invalid note URL: %w", err)
+	}
+	if parsed.Hostname() == "" {
+		return nil, fmt.Errorf("xhs: invalid note URL: missing hostname")
+	}
+
+	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+	alternateDomain := ""
+	switch {
+	case isDomainOrSubdomain(host, "xiaohongshu.com"):
+		alternateDomain = "rednote.com"
+	case isDomainOrSubdomain(host, "rednote.com"):
+		alternateDomain = "xiaohongshu.com"
+	default:
+		return []string{rawURL}, nil
+	}
+
+	alternate := *parsed
+	prefix := strings.TrimSuffix(host, ".xiaohongshu.com")
+	prefix = strings.TrimSuffix(prefix, ".rednote.com")
+	if prefix == "xiaohongshu.com" || prefix == "rednote.com" {
+		prefix = ""
+	}
+	if prefix != "" {
+		alternate.Host = prefix + "." + alternateDomain
+	} else {
+		alternate.Host = alternateDomain
+	}
+	if port := parsed.Port(); port != "" {
+		alternate.Host += ":" + port
+	}
+	return []string{rawURL, alternate.String()}, nil
+}
+
+func isDomainOrSubdomain(host, domain string) bool {
+	return host == domain || strings.HasSuffix(host, "."+domain)
+}
+
+func fetchNote(ctx context.Context, noteURL string, opts FetchOptions) (*NoteInfo, error) {
+	// 1. Resolve short-link nếu domain hỗ trợ redirect
+	resolvedURL, err := resolveURL(ctx, noteURL, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +345,7 @@ func extractState(html string) (map[string]json.RawMessage, error) {
 		}
 	}
 	if raw == "" {
-		return nil, fmt.Errorf("xhs: không tìm thấy __INITIAL_STATE__ trong HTML — kiểm tra lại cookie")
+		return nil, fmt.Errorf("XHS_NOTE_PARSE: không tìm thấy __INITIAL_STATE__ trong HTML — kiểm tra lại cấu trúc trang hoặc quyền truy cập")
 	}
 
 	// XHS dùng JS `undefined` (không hợp lệ trong JSON) → thay bằng null
@@ -292,7 +355,7 @@ func extractState(html string) (map[string]json.RawMessage, error) {
 
 	var state map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &state); err != nil {
-		return nil, fmt.Errorf("xhs: parse JSON lỗi: %w", err)
+		return nil, fmt.Errorf("XHS_NOTE_PARSE: parse __INITIAL_STATE__ JSON: %w", err)
 	}
 	return state, nil
 }

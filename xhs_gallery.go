@@ -34,26 +34,43 @@ func routeXHSNote(noteType string) xhsDownloadRoute {
 	return xhsDownloadDirect
 }
 
-func downloadXHSNoteVideo(ctx context.Context, index int, noteURL, savePath string, threads int) error {
-	fetchOptions, err := getXHSFetchOptions(ctx)
+func downloadXHSNoteVideo(ctx context.Context, index int, noteURL, format, quality, savePath string, noPlaylist bool, threads int) error {
+	fetchOptions, err := getXHSFetchOptions(ctx, noteURL)
 	if err != nil {
 		return err
 	}
-	info, err := xhsmodule.FetchWithOptions(ctx, noteURL, fetchOptions)
+	info, err := fetchXHSNoteWithSessionFallback(ctx, noteURL, fetchOptions)
 	if err != nil {
+		// The HTML note parser is not needed for video downloads when yt-dlp
+		// can extract the canonical page directly. This mirrors the verified
+		// CLI flow: canonical URL + web_session + bestvideo fallback selector.
+		if extractXHSSession(fetchOptions.Cookie) != "" {
+			canonicalURL, canonicalErr := canonicalizeXHSVideoPageURL(noteURL)
+			if canonicalErr == nil {
+				LogWarning("[XHS] Note parser failed; retrying video through yt-dlp: %v", canonicalErr)
+				directErr := downloadVideoWithXHSSessionFormat(
+					ctx, index, canonicalURL, format, quality, savePath, noPlaylist,
+					threads, fetchOptions.Cookie, true, "",
+				)
+				if directErr == nil {
+					return nil
+				}
+				return fmt.Errorf("xhs: note parser failed: %v; direct yt-dlp fallback failed: %w", err, directErr)
+			}
+		}
 		return fmt.Errorf("xhs: analyze note video failed: %w", err)
 	}
 	if routeXHSNote(info.Type) != xhsDownloadYTDLP {
 		return fmt.Errorf("xhs: the selected note contains no video")
 	}
-	return downloadXHSVideoWithSession(ctx, index, info.VideoURL, info.Title, info.Author, savePath, threads, fetchOptions.Cookie)
+	return downloadXHSVideoWithSession(ctx, index, info.VideoURL, info.Title, info.Author, format, quality, savePath, noPlaylist, threads, fetchOptions.Cookie, noteURL)
 }
 
 func downloadXHSVideo(ctx context.Context, index int, videoURL, title, author string, options GalleryDownloadOptions) error {
-	return downloadXHSVideoWithSession(ctx, index, videoURL, title, author, options.SavePath, options.Threads, "")
+	return downloadXHSVideoWithSession(ctx, index, videoURL, title, author, "MP4", "Best", options.SavePath, true, options.Threads, "")
 }
 
-func downloadXHSVideoWithSession(ctx context.Context, index int, videoURL, title, author, savePath string, threads int, cookieHeader string) error {
+func downloadXHSVideoWithSession(ctx context.Context, index int, videoURL, title, author, format, quality, savePath string, noPlaylist bool, threads int, cookieHeader string, noteURL ...string) error {
 	if videoURL == "" {
 		return fmt.Errorf("xhs: video note has empty video URL")
 	}
@@ -66,11 +83,17 @@ func downloadXHSVideoWithSession(ctx context.Context, index int, videoURL, title
 		targetDir = filepath.Join(targetDir, sanitizeFolderName(author))
 	}
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
-		return fmt.Errorf("create xhs output dir failed: %w", err)
+		return classifyXHSError("filesystem", fmt.Errorf("create XHS output directory: %w", err))
 	}
 
-	if err := downloadVideoWithXHSSession(ctx, index, videoURL, "MP4", "Best", targetDir, true, threads, cookieHeader, true); err != nil {
-		return fmt.Errorf("xhs video download failed: %w", err)
+	var downloadErr error
+	if len(noteURL) > 0 && extractXHSSession(cookieHeader) != "" {
+		downloadErr = downloadXHSWithSessionFallback(ctx, index, videoURL, format, quality, targetDir, noPlaylist, threads, extractXHSSession(cookieHeader), noteURL[0])
+	} else {
+		downloadErr = downloadVideoWithXHSSession(ctx, index, videoURL, format, quality, targetDir, noPlaylist, threads, cookieHeader, true, noteURL...)
+	}
+	if downloadErr != nil {
+		return fmt.Errorf("xhs video download failed: %w", downloadErr)
 	}
 	runtime.EventsEmit(ctx, "video-title", map[string]interface{}{
 		"index": index,
@@ -80,11 +103,11 @@ func downloadXHSVideoWithSession(ctx context.Context, index int, videoURL, title
 }
 
 func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, options GalleryDownloadOptions) error {
-	fetchOptions, err := getXHSFetchOptions(ctx)
+	fetchOptions, err := getXHSFetchOptions(ctx, url)
 	if err != nil {
 		return err
 	}
-	info, err := xhsmodule.FetchWithOptions(ctx, url, fetchOptions)
+	info, err := fetchXHSNoteWithSessionFallback(ctx, url, fetchOptions)
 	if err != nil {
 		return err
 	}
@@ -95,7 +118,7 @@ func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, opti
 	})
 
 	if routeXHSNote(info.Type) == xhsDownloadYTDLP {
-		return downloadXHSVideoWithSession(ctx, index, info.VideoURL, info.Title, info.Author, options.SavePath, options.Threads, galleryVideoCookieHeader(fetchOptions))
+		return downloadXHSVideoWithSession(ctx, index, info.VideoURL, info.Title, info.Author, "MP4", "Best", options.SavePath, true, options.Threads, galleryVideoCookieHeader(fetchOptions), url)
 	}
 
 	targetDir := options.SavePath
@@ -190,7 +213,38 @@ func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, opti
 	return nil
 }
 
-func getXHSFetchOptions(ctx context.Context) (xhsmodule.FetchOptions, error) {
+func fetchXHSNoteWithSessionFallback(ctx context.Context, noteURL string, options xhsmodule.FetchOptions) (*xhsmodule.NoteInfo, error) {
+	info, firstErr := xhsmodule.FetchWithOptions(ctx, noteURL, options)
+	if firstErr == nil || ctx.Err() != nil || options.Cookie == "" {
+		return info, firstErr
+	}
+
+	manager.mu.RLock()
+	browser := normalizeBrowserName(manager.config.SelectedBrowser)
+	profile := manager.config.SelectedProfile
+	mode := manager.config.Mode
+	manager.mu.RUnlock()
+	if browser == "" || profile == "" || mode == CookieModeManual {
+		return nil, firstErr
+	}
+	currentDomain, _ := manager.xhsSessionSource()
+	if currentDomain == "" {
+		return nil, firstErr
+	}
+	alternateSession, alternateDomain, err := manager.alternateXHSSession(ctx, browser, noteURL, currentDomain)
+	if err != nil {
+		return nil, fmt.Errorf("xhs: primary session failed: %v; alternate session export failed: %w", firstErr, err)
+	}
+	options.Cookie = "web_session=" + alternateSession
+	info, err = xhsmodule.FetchWithOptions(ctx, noteURL, options)
+	if err != nil {
+		return nil, fmt.Errorf("xhs: primary session failed: %v; alternate %s session failed: %w", firstErr, alternateDomain, err)
+	}
+	manager.cacheXHSSessionCandidate(browser, profile, alternateSession, alternateDomain)
+	return info, nil
+}
+
+func getXHSFetchOptions(ctx context.Context, noteURL string) (xhsmodule.FetchOptions, error) {
 	manager.mu.RLock()
 	cfg := manager.config
 	manager.mu.RUnlock()
@@ -204,7 +258,19 @@ func getXHSFetchOptions(ctx context.Context) (xhsmodule.FetchOptions, error) {
 	switch cfg.Mode {
 	case CookieModeBrowser:
 		if cfg.SelectedBrowser != "" {
-			session, err := manager.extractWebSessionFromBrowser(ctx, cfg.SelectedBrowser, "https://www.xiaohongshu.com/")
+			session, err := manager.extractWebSessionFromBrowser(ctx, cfg.SelectedBrowser, noteURL)
+			if err != nil {
+				return xhsmodule.FetchOptions{}, err
+			}
+			cookie, err := xhsBrowserCookie(session)
+			if err != nil {
+				return xhsmodule.FetchOptions{}, err
+			}
+			opts.Cookie = cookie
+		}
+	case CookieModeNone:
+		if cfg.SelectedBrowser != "" && cfg.SelectedProfile != "" {
+			session, err := manager.extractWebSessionFromBrowser(ctx, cfg.SelectedBrowser, noteURL)
 			if err != nil {
 				return xhsmodule.FetchOptions{}, err
 			}

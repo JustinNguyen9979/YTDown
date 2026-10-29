@@ -151,13 +151,87 @@ func TestXHSCookieExportErrorDistinguishesExportFailureFromMissingSession(t *tes
 	}
 }
 
-func TestXHSCookieExportFailureRejectsExistingCookieFile(t *testing.T) {
-	existingCookieFile := "# Netscape HTTP Cookie File\n.xiaohongshu.com\tTRUE\t/\tTRUE\t2147483647\tweb_session\tstale-session-sentinel\n"
-	commandErr := errors.New("yt-dlp exited with status 1")
-	if session, err := xhsCookieExportResult(commandErr, []byte(existingCookieFile), nil); err == nil {
-		t.Fatalf("xhsCookieExportResult() returned stale session %q after export failed", session)
-	} else if !strings.Contains(err.Error(), "yt-dlp could not export cookies") {
-		t.Fatalf("xhsCookieExportResult() error = %q, want export failure guidance", err)
+func TestParseNetscapeCookieFileForDomainPrefersRequestedSessionDomain(t *testing.T) {
+	content := "# Netscape HTTP Cookie File\n" +
+		".rednote.com\tTRUE\t/\tTRUE\t2147483647\tweb_session\trednote-session\n" +
+		".xiaohongshu.com\tTRUE\t/\tTRUE\t2147483647\tweb_session\txiaohongshu-session\n"
+
+	for _, tt := range []struct {
+		host string
+		want string
+	}{
+		{host: "www.rednote.com", want: "rednote-session"},
+		{host: "www.xiaohongshu.com", want: "xiaohongshu-session"},
+	} {
+		_, got := parseNetscapeCookieFileForDomain(content, tt.host)
+		if got != tt.want {
+			t.Errorf("parseNetscapeCookieFileForDomain(%q) session = %q, want %q", tt.host, got, tt.want)
+		}
+	}
+}
+
+func TestParseNetscapeCookieFileForDomainRejectsUnrelatedSubdomainCookie(t *testing.T) {
+	content := "# Netscape HTTP Cookie File\n" +
+		".sub.rednote.com\tTRUE\t/\tTRUE\t2147483647\tweb_session\twrong-scope-session\n" +
+		".rednote.com\tTRUE\t/\tTRUE\t2147483647\tother_cookie\tvalid-parent-cookie\n"
+	_, session := parseNetscapeCookieFileForDomain(content, "www.rednote.com")
+	if session != "" {
+		t.Fatalf("parseNetscapeCookieFileForDomain() session = %q, want no www.rednote.com session", session)
+	}
+}
+
+func TestBrowserCookieExportResultUsesMatchingCookiesAfterCommandError(t *testing.T) {
+	content := []byte("# Netscape HTTP Cookie File\n.rednote.com\tTRUE\t/\tTRUE\t2147483647\tweb_session\tfresh-session-sentinel\n")
+	cookies, session, err := browserCookieExportResult(errors.New("yt-dlp: Unsupported URL"), content, nil, "www.rednote.com")
+	if err != nil {
+		t.Fatalf("browserCookieExportResult() error = %v, want valid cookie file accepted", err)
+	}
+	if len(cookies) != 1 || session != "fresh-session-sentinel" {
+		t.Fatalf("browserCookieExportResult() = (%#v, %q), want matching Rednote cookie and session", cookies, session)
+	}
+}
+
+func TestBrowserCookieExportResultRejectsMissingInvalidOrUnrelatedCookies(t *testing.T) {
+	for _, content := range [][]byte{
+		nil,
+		[]byte("not a Netscape cookie file"),
+		[]byte("# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t2147483647\tSID\tsynthetic-cookie\n"),
+		[]byte("# Netscape HTTP Cookie File\n.evilrednote.com\tTRUE\t/\tTRUE\t2147483647\tweb_session\tlookalike-session\n"),
+	} {
+		cookies, session, err := browserCookieExportResult(errors.New("yt-dlp export failed"), content, nil, "www.xiaohongshu.com")
+		if err == nil || len(cookies) != 0 || session != "" {
+			t.Fatalf("browserCookieExportResult() = (%#v, %q, %v), want error and no matching cookies", cookies, session, err)
+		}
+	}
+}
+
+func TestCookieExportURLCanonicalizesOnlyRednotePlatform(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "xiaohongshu www remains canonical", input: "https://www.xiaohongshu.com/explore/abc?source=share", want: "https://www.xiaohongshu.com/explore/abc?source=share"},
+		{name: "xiaohongshu apex becomes www", input: "https://xiaohongshu.com/explore/abc?source=share", want: "https://www.xiaohongshu.com/explore/abc?source=share"},
+		{name: "xhslink", input: "https://xhslink.com/a/short?share=1", want: "https://rednote.com/a/short?share=1"},
+		{name: "rednote www remains canonical", input: "https://www.rednote.com/discovery/item/abc?x=1", want: "https://www.rednote.com/discovery/item/abc?x=1"},
+		{name: "youtube", input: "https://www.youtube.com/watch?v=abc", want: "https://www.youtube.com/watch?v=abc"},
+		{name: "instagram", input: "https://www.instagram.com/reel/abc/", want: "https://www.instagram.com/reel/abc/"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := canonicalCookieExportURL(tt.input); got != tt.want {
+				t.Fatalf("canonicalCookieExportURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBrowserCookieExportArgsPassCanonicalURL(t *testing.T) {
+	args := browserCookieExportArgs("firefox", "/tmp/cookies.txt", "https://www.rednote.com/explore/abc?share=1")
+	want := []string{"--cookies-from-browser", "firefox", "--cookies", "/tmp/cookies.txt", "--no-warnings", "--no-playlist", "--skip-download", "https://www.rednote.com/explore/abc?share=1"}
+	if !bytes.Equal([]byte(strings.Join(args, "\x00")), []byte(strings.Join(want, "\x00"))) {
+		t.Fatalf("browserCookieExportArgs() = %#v, want %#v", args, want)
 	}
 }
 
@@ -172,28 +246,41 @@ func TestXHSCookieExportSuccessReturnsSessionFromOutput(t *testing.T) {
 	}
 }
 
-func TestBrowserCookieExportArgsDoNotIncludeURL(t *testing.T) {
-	args := browserCookieExportArgs("firefox:/Users/test/Library/Application Support/Firefox/Profiles/default", "/tmp/cookies.txt")
+func TestBrowserCookieExportArgsIncludeProvidedURL(t *testing.T) {
+	browserSpec := "firefox:/Users/test/Library/Application Support/Firefox/Profiles/default"
+	inputURL := "https://www.youtube.com/watch?v=synthetic"
+	args := browserCookieExportArgs(browserSpec, "/tmp/cookies.txt", inputURL)
 	want := []string{
-		"--cookies-from-browser", "firefox:/Users/test/Library/Application Support/Firefox/Profiles/default",
+		"--cookies-from-browser", browserSpec,
 		"--cookies", "/tmp/cookies.txt",
 		"--no-warnings",
 		"--no-playlist",
+		"--skip-download",
+		inputURL,
 	}
 	if !bytes.Equal([]byte(strings.Join(args, "\x00")), []byte(strings.Join(want, "\x00"))) {
 		t.Fatalf("browserCookieExportArgs() = %#v, want %#v", args, want)
 	}
-	for _, arg := range args {
-		if strings.HasPrefix(arg, "https://") {
-			t.Fatalf("browserCookieExportArgs() unexpectedly contains URL argument %q", arg)
-		}
+}
+
+func TestXHSDownloadURLRemainsOnCanonicalXiaohongshuHost(t *testing.T) {
+	downloadURL := "https://www.xiaohongshu.com/explore/abc?source=share"
+	if canonical := canonicalCookieExportURL(downloadURL); canonical != downloadURL {
+		t.Fatalf("canonicalCookieExportURL() changed download URL to %q", canonical)
+	}
+	rednoteURL, err := canonicalizeXHSVideoPageURL("https://www.rednote.com/explore/abc?source=share")
+	if err != nil {
+		t.Fatalf("canonicalizeXHSVideoPageURL() error = %v", err)
+	}
+	if rednoteURL != downloadURL {
+		t.Fatalf("canonicalizeXHSVideoPageURL() = %q, want %q", rednoteURL, downloadURL)
 	}
 }
 
 func TestBrowserCookieExportArgsOutputCanYieldXHSSession(t *testing.T) {
-	args := browserCookieExportArgs("firefox", "/tmp/cookies.txt")
-	if len(args) == 0 || args[len(args)-1] == "https://www.xiaohongshu.com/" {
-		t.Fatalf("browserCookieExportArgs() must not require a site URL: %#v", args)
+	args := browserCookieExportArgs("firefox", "/tmp/cookies.txt", "https://www.rednote.com/explore/synthetic")
+	if args[len(args)-1] != "https://www.rednote.com/explore/synthetic" {
+		t.Fatalf("browserCookieExportArgs() URL = %q, want Rednote URL", args[len(args)-1])
 	}
 
 	content := "# Netscape HTTP Cookie File\n.xiaohongshu.com\tTRUE\t/\tTRUE\t2147483647\tweb_session\tsynthetic-session-sentinel\n"
@@ -424,6 +511,21 @@ func TestCookieConfigLoadsLegacyJSONWithoutBookmark(t *testing.T) {
 	}
 	if config.SelectedProfile != "/tmp/Profile 1" || len(config.SelectedProfileBookmark) != 0 {
 		t.Fatalf("legacy config = %#v, want profile without bookmark", config)
+	}
+}
+
+func TestParseNetscapeCookieFileForDomainKeepsRednoteAndXiaohongshuSessionsSeparate(t *testing.T) {
+	content := "# Netscape HTTP Cookie File\n" +
+		".rednote.com\tTRUE\t/\tTRUE\t2147483647\tweb_session\trednote-session\n" +
+		".xiaohongshu.com\tTRUE\t/\tTRUE\t2147483647\tweb_session\txhs-session\n"
+
+	_, rednoteSession := parseNetscapeCookieFileForDomain(content, "www.rednote.com")
+	if rednoteSession != "rednote-session" {
+		t.Fatalf("RedNote session = %q, want rednote-session", rednoteSession)
+	}
+	_, xhsSession := parseNetscapeCookieFileForDomain(content, "www.xiaohongshu.com")
+	if xhsSession != "xhs-session" {
+		t.Fatalf("Xiaohongshu session = %q, want xhs-session", xhsSession)
 	}
 }
 

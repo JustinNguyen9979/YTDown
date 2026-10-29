@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/user"
@@ -27,6 +28,302 @@ type VideoInfo struct {
 	Title     string `json:"title"`
 	Thumbnail string `json:"thumbnail"`
 	ID        string `json:"id"`
+}
+
+type ytdlpFormatMetadata struct {
+	FormatID         string                `json:"format_id"`
+	Ext              string                `json:"ext"`
+	Width            int                   `json:"width"`
+	Height           int                   `json:"height"`
+	FPS              float64               `json:"fps"`
+	TBR              float64               `json:"tbr"`
+	VCodec           string                `json:"vcodec"`
+	ACodec           string                `json:"acodec"`
+	Formats          []ytdlpFormatMetadata `json:"formats"`
+	RequestedFormats []ytdlpFormatMetadata `json:"requested_formats"`
+}
+
+const xhsBestFormatSelector = "bestvideo*+bestaudio/best"
+
+func (metadata ytdlpFormatMetadata) qualitySummary() ytdlpFormatMetadata {
+	formats := metadata.RequestedFormats
+	if len(formats) == 0 {
+		formats = metadata.Formats
+	}
+	if len(formats) == 0 {
+		return metadata
+	}
+
+	var bestVideo ytdlpFormatMetadata
+	var bestAudioBitrate float64
+	for _, format := range formats {
+		if format.VCodec == "none" {
+			if format.TBR > bestAudioBitrate {
+				bestAudioBitrate = format.TBR
+			}
+			continue
+		}
+		if format.Height > bestVideo.Height ||
+			(format.Height == bestVideo.Height && format.Width > bestVideo.Width) ||
+			(format.Height == bestVideo.Height && format.Width == bestVideo.Width && format.FPS > bestVideo.FPS) ||
+			(format.Height == bestVideo.Height && format.Width == bestVideo.Width && format.FPS == bestVideo.FPS && format.TBR > bestVideo.TBR) {
+			bestVideo = format
+		}
+	}
+	if bestVideo.Height == 0 && bestVideo.Width == 0 && bestVideo.FPS == 0 && bestVideo.TBR == 0 {
+		return ytdlpFormatMetadata{}
+	}
+	bestVideo.TBR += bestAudioBitrate
+	return bestVideo
+}
+
+func (metadata ytdlpFormatMetadata) isBetterThan(other ytdlpFormatMetadata) bool {
+	if metadata.Height != other.Height {
+		return metadata.Height > other.Height
+	}
+	if metadata.Width != other.Width {
+		return metadata.Width > other.Width
+	}
+	if metadata.FPS != other.FPS {
+		return metadata.FPS > other.FPS
+	}
+	return metadata.TBR > other.TBR
+}
+
+func (metadata ytdlpFormatMetadata) hasVideoQuality() bool {
+	return metadata.Height > 0 || metadata.Width > 0 || metadata.FPS > 0 || metadata.TBR > 0
+}
+
+func normalizeVideoInputURL(rawURL string) (string, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return "", fmt.Errorf("video URL is empty")
+	}
+	// FE có thể gửi URL đã bị escape theo dạng https:\/\/... hoặc có
+	// backslash trước query separator. yt-dlp cần URL thật, không phải chuỗi escape.
+	rawURL = strings.ReplaceAll(rawURL, "\\", "")
+	parsed, err := url.ParseRequestURI(rawURL)
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		if err == nil {
+			err = fmt.Errorf("URL must use http or https and include a hostname")
+		}
+		return "", fmt.Errorf("invalid video URL: %w", err)
+	}
+	if isXHSNoteURL(rawURL) {
+		return canonicalizeXHSVideoPageURL(rawURL)
+	}
+	return parsed.String(), nil
+}
+
+func canonicalizeXHSVideoPageURL(rawURL string) (string, error) {
+	rawURL = strings.ReplaceAll(strings.TrimSpace(rawURL), "\\", "")
+	parsed, err := url.ParseRequestURI(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid XHS video page URL: %w", err)
+	}
+	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+	if host == "rednote.com" || strings.HasSuffix(host, ".rednote.com") ||
+		host == "xiaohongshu.com" || strings.HasSuffix(host, ".xiaohongshu.com") {
+		parsed.Host = "www.xiaohongshu.com"
+		if port := parsed.Port(); port != "" {
+			parsed.Host += ":" + port
+		}
+	}
+	return parsed.String(), nil
+}
+
+func parseYTDLPFormatMetadata(data []byte) (ytdlpFormatMetadata, error) {
+	var metadata ytdlpFormatMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return ytdlpFormatMetadata{}, fmt.Errorf("parse yt-dlp format metadata: %w", err)
+	}
+	return metadata.qualitySummary(), nil
+}
+
+func preferXHSDirectVideo(direct, extractor ytdlpFormatMetadata) bool {
+	return direct.hasVideoQuality() && !extractor.isBetterThan(direct)
+}
+
+func buildYTDLPMetadataArgs(targetURL, formatSelector string, cookieArgs []string) []string {
+	args := []string{"-J", "--no-warnings", "--no-playlist"}
+	if IsXiaohongshu(targetURL) {
+		args = append(args, "--referer", "https://www.xiaohongshu.com/")
+	}
+	if formatSelector != "" {
+		args = append(args, "-f", formatSelector)
+	}
+	args = append(args, cookieArgs...)
+	args = append(args, targetURL)
+	return args
+}
+
+func inspectYTDLPFormat(ctx context.Context, targetURL, formatSelector string, cookieArgs []string) (ytdlpFormatMetadata, error) {
+	ytdlpPath := getResourcePath("yt-dlp")
+	if ytdlpPath == "" {
+		return ytdlpFormatMetadata{}, fmt.Errorf("yt-dlp not found")
+	}
+	cmd := platform.CommandContext(ctx, ytdlpPath, buildYTDLPMetadataArgs(targetURL, formatSelector, cookieArgs)...)
+	output, err := cmd.Output()
+	if err != nil {
+		return ytdlpFormatMetadata{}, err
+	}
+	return parseYTDLPFormatMetadata(output)
+}
+
+func selectXHSDirectFormat(formats []ytdlpFormatMetadata, outputFormat, quality string) (string, bool) {
+	maxHeight := requestedQualityHeight(quality)
+	outputFormat = strings.ToLower(strings.TrimSpace(outputFormat))
+	var best ytdlpFormatMetadata
+	for _, candidate := range formats {
+		if candidate.FormatID == "" || candidate.VCodec == "none" || !candidate.hasVideoQuality() {
+			continue
+		}
+		if maxHeight > 0 && candidate.Height > maxHeight {
+			continue
+		}
+		if outputFormat != "" && candidate.Ext != "" && candidate.Ext != outputFormat {
+			continue
+		}
+		if best.FormatID == "" || candidate.isBetterThan(best) {
+			best = candidate
+		}
+	}
+	if best.FormatID == "" {
+		return "", false
+	}
+	if best.ACodec == "" || best.ACodec == "none" {
+		return best.FormatID + "+bestaudio", true
+	}
+	return best.FormatID, true
+}
+
+func qualityFallbackSelector(quality, outputFormat string) string {
+	_ = outputFormat // buildDownloadArgs handles output container/merging.
+	maxHeight := requestedQualityHeight(quality)
+	if maxHeight == 0 {
+		return xhsBestFormatSelector
+	}
+	return fmt.Sprintf("bestvideo*[height<=%d]+bestaudio/best[height<=%d]", maxHeight, maxHeight)
+}
+
+func selectXHSFormatForQuality(directFormats, extractorFormats []ytdlpFormatMetadata, outputFormat, quality string) (selector string, useExtractor bool, err error) {
+	if selector, ok := selectXHSDirectFormat(directFormats, outputFormat, quality); ok {
+		return selector, false, nil
+	}
+	if len(extractorFormats) == 0 {
+		return "", false, fmt.Errorf("XHS_FORMAT_INSPECTION: extractor returned no video formats")
+	}
+	return qualityFallbackSelector(quality, outputFormat), true, nil
+}
+
+func classifyXHSError(kind string, err error) error {
+	if err == nil {
+		return nil
+	}
+	prefixes := map[string]string{
+		"cookie_export":     "XHS_COOKIE_EXPORT",
+		"note_parse":        "XHS_NOTE_PARSE",
+		"format_inspection": "XHS_FORMAT_INSPECTION",
+		"filesystem":        "XHS_FILESYSTEM",
+		"download":          "XHS_DOWNLOAD",
+	}
+	prefix := prefixes[kind]
+	if prefix == "" {
+		prefix = "XHS_DOWNLOAD"
+	}
+	return fmt.Errorf("%s: %w", prefix, err)
+}
+
+func chooseXHSVideoFormat(ctx context.Context, noteURL, directURL, outputFormat, quality string, cookieArgs []string) (string, bool, error) {
+	canonicalNoteURL, err := canonicalizeXHSVideoPageURL(noteURL)
+	if err != nil {
+		return "", false, classifyXHSError("format_inspection", err)
+	}
+	directMetadata, directErr := inspectYTDLPFormats(ctx, directURL, cookieArgs)
+	if directErr == nil {
+		if selector, ok := selectXHSDirectFormat(directMetadata.Formats, outputFormat, quality); ok {
+			return selector, false, nil
+		}
+	}
+
+	extractorMetadata, extractorErr := inspectYTDLPFormats(ctx, canonicalNoteURL, cookieArgs)
+	if extractorErr != nil {
+		if directErr != nil {
+			return "", false, classifyXHSError("format_inspection", fmt.Errorf("inspect direct candidate: %v; inspect extractor candidate: %w", directErr, extractorErr))
+		}
+		return "", false, classifyXHSError("format_inspection", extractorErr)
+	}
+	if _, _, err := selectXHSFormatForQuality(nil, extractorMetadata.Formats, outputFormat, quality); err != nil {
+		return "", false, classifyXHSError("format_inspection", err)
+	}
+	return qualityFallbackSelector(quality, outputFormat), true, nil
+}
+
+func inspectYTDLPFormats(ctx context.Context, targetURL string, cookieArgs []string) (ytdlpFormatMetadata, error) {
+	ytdlpPath := getResourcePath("yt-dlp")
+	if ytdlpPath == "" {
+		return ytdlpFormatMetadata{}, fmt.Errorf("yt-dlp not found")
+	}
+	cmd := platform.CommandContext(ctx, ytdlpPath, buildYTDLPMetadataArgs(targetURL, "", cookieArgs)...)
+	output, err := cmd.Output()
+	if err != nil {
+		return ytdlpFormatMetadata{}, err
+	}
+	var metadata ytdlpFormatMetadata
+	if err := json.Unmarshal(output, &metadata); err != nil {
+		return ytdlpFormatMetadata{}, fmt.Errorf("parse yt-dlp format metadata: %w", err)
+	}
+	return metadata, nil
+}
+
+func requestedQualityHeight(quality string) int {
+	quality = strings.TrimSpace(strings.ToLower(quality))
+	if quality == "" || quality == "best" || quality == "best quality" {
+		return 0
+	}
+	height, err := strconv.Atoi(strings.TrimSuffix(quality, "p"))
+	if err != nil || height <= 0 {
+		return 0
+	}
+	return height
+}
+
+func xhsDownloadURL(noteURL, directURL string, useExtractor bool) (string, error) {
+	if !useExtractor {
+		return directURL, nil
+	}
+	return canonicalizeXHSVideoPageURL(noteURL)
+}
+
+func retryXHSWithFallback(ctx context.Context, noteURL, fallbackFormat string, directErr error, alreadyExtractor bool, download func(downloadURL, formatSelector string) error) error {
+	if directErr == nil || alreadyExtractor || ctx.Err() != nil {
+		return directErr
+	}
+	fallbackURL, err := canonicalizeXHSVideoPageURL(noteURL)
+	if err != nil {
+		return fmt.Errorf("direct XHS video download failed: %v; prepare extractor fallback: %w", directErr, err)
+	}
+	if ctx.Err() != nil {
+		return fmt.Errorf("direct XHS video download failed: %v; retry skipped because context ended: %w", directErr, ctx.Err())
+	}
+	if fallbackErr := download(fallbackURL, fallbackFormat); fallbackErr != nil {
+		return fmt.Errorf("direct XHS video download failed: %v; extractor fallback failed: %w", directErr, fallbackErr)
+	}
+	return nil
+}
+
+func replaceFormatSelector(args []string, selector string) []string {
+	if selector == "" {
+		return args
+	}
+	updated := append([]string(nil), args...)
+	for i := 0; i < len(updated)-1; i++ {
+		if updated[i] == "-f" {
+			updated[i+1] = selector
+			return updated
+		}
+	}
+	return append(updated, "-f", selector)
 }
 
 // ResolveShortURL follows redirects to find the final URL for short links
@@ -103,13 +400,64 @@ func routeVideoDownload(rawURL string) videoDownloadRoute {
 
 // DownloadVideo downloads a video using yt-dlp or the XHS note parser.
 func DownloadVideo(ctx context.Context, index int, url, format, quality, savePath string, noPlaylist bool, concurrentFragments int) error {
-	if routeVideoDownload(url) == videoDownloadXHSNote {
-		return downloadXHSNoteVideo(ctx, index, url, savePath, concurrentFragments)
+	normalizedURL, err := normalizeVideoInputURL(url)
+	if err != nil {
+		return err
 	}
-	return downloadVideoWithXHSSession(ctx, index, url, format, quality, savePath, noPlaylist, concurrentFragments, "", false)
+	if routeVideoDownload(normalizedURL) == videoDownloadXHSNote {
+		return downloadXHSNoteVideo(ctx, index, normalizedURL, format, quality, savePath, noPlaylist, concurrentFragments)
+	}
+	return downloadVideoWithXHSSession(ctx, index, normalizedURL, format, quality, savePath, noPlaylist, concurrentFragments, "", false)
 }
 
-func downloadVideoWithXHSSession(ctx context.Context, index int, url, format, quality, savePath string, noPlaylist bool, concurrentFragments int, xhsSession string, metadataKnown bool) error {
+func downloadVideoWithXHSSession(ctx context.Context, index int, url, format, quality, savePath string, noPlaylist bool, concurrentFragments int, xhsSession string, metadataKnown bool, xhsNoteURL ...string) error {
+	if len(xhsNoteURL) > 0 && strings.TrimSpace(xhsNoteURL[0]) != "" && extractXHSSession(xhsSession) != "" {
+		return downloadXHSWithSessionFallback(ctx, index, url, format, quality, savePath, noPlaylist, concurrentFragments, extractXHSSession(xhsSession), xhsNoteURL[0])
+	}
+	return downloadVideoWithXHSSessionFormat(ctx, index, url, format, quality, savePath, noPlaylist, concurrentFragments, xhsSession, metadataKnown, "", xhsNoteURL...)
+}
+
+func downloadXHSWithSessionFallback(ctx context.Context, index int, videoURL, format, quality, savePath string, noPlaylist bool, concurrentFragments int, session, sourceURL string) error {
+	firstErr := downloadVideoWithXHSSessionFormat(ctx, index, videoURL, format, quality, savePath, noPlaylist, concurrentFragments, "web_session="+session, true, "", sourceURL)
+	if firstErr == nil {
+		manager.mu.RLock()
+		browser := normalizeBrowserName(manager.config.SelectedBrowser)
+		profile := manager.config.SelectedProfile
+		manager.mu.RUnlock()
+		currentDomain := manager.xhsAttemptSource(session)
+		if browser != "" && profile != "" && currentDomain != "" {
+			manager.commitXHSSession(browser, profile, session, currentDomain)
+		}
+		return nil
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	manager.mu.RLock()
+	browser := normalizeBrowserName(manager.config.SelectedBrowser)
+	profile := manager.config.SelectedProfile
+	mode := manager.config.Mode
+	manager.mu.RUnlock()
+	currentDomain := manager.xhsAttemptSource(session)
+	if currentDomain == "" {
+		currentDomain, _ = manager.xhsSessionSource()
+	}
+	if browser == "" || profile == "" || mode == CookieModeManual || currentDomain == "" {
+		return firstErr
+	}
+	alternateSession, alternateDomain, err := manager.alternateXHSSession(ctx, browser, sourceURL, currentDomain)
+	if err != nil {
+		return fmt.Errorf("primary XHS session download failed: %v; alternate session export failed: %w", firstErr, err)
+	}
+	if err := downloadVideoWithXHSSessionFormat(ctx, index, videoURL, format, quality, savePath, noPlaylist, concurrentFragments, "web_session="+alternateSession, true, "", sourceURL); err != nil {
+		return fmt.Errorf("primary XHS session download failed: %v; alternate %s session download failed: %w", firstErr, alternateDomain, err)
+	}
+	manager.commitXHSSession(browser, profile, alternateSession, alternateDomain)
+	return nil
+}
+
+func downloadVideoWithXHSSessionFormat(ctx context.Context, index int, url, format, quality, savePath string, noPlaylist bool, concurrentFragments int, xhsSession string, metadataKnown bool, forcedFormat string, xhsNoteURL ...string) error {
 	ytdlpPath := getResourcePath("yt-dlp")
 	ffmpegPath := getResourcePath("ffmpeg")
 
@@ -136,29 +484,61 @@ func downloadVideoWithXHSSession(ctx context.Context, index int, url, format, qu
 		}
 	}
 
-	// XHS note metadata was already fetched by its parser. Avoid a second yt-dlp
-	// cookie-from-browser export; other sources keep the existing metadata path.
-	if !metadataKnown {
-		info, _ := GetVideoMetadata(ctx, url)
-		if info != nil {
-			runtime.EventsEmit(ctx, "video-info", map[string]interface{}{
-				"index":     index,
-				"title":     info.Title,
-				"thumbnail": info.Thumbnail,
-				"id":        info.ID,
-			})
+	// XHS note parsing may already know the title/video URL, but the FE still
+	// needs the normal video-info event for its thumbnail and Play overlay.
+	// Use the already-created session cookie file instead of exporting browser
+	// cookies a second time.
+	metadataURL := url
+	if len(xhsNoteURL) > 0 && strings.TrimSpace(xhsNoteURL[0]) != "" {
+		if canonicalURL, canonicalErr := canonicalizeXHSVideoPageURL(xhsNoteURL[0]); canonicalErr == nil {
+			metadataURL = canonicalURL
 		}
+	}
+	var info *VideoInfo
+	if metadataKnown && len(xhsCookieArgs) > 0 {
+		info, _ = getVideoMetadataWithCookieArgs(ctx, metadataURL, xhsCookieArgs)
+	} else if !metadataKnown {
+		info, _ = GetVideoMetadata(ctx, metadataURL)
+	}
+	if info != nil {
+		runtime.EventsEmit(ctx, "video-info", map[string]interface{}{
+			"index":     index,
+			"title":     info.Title,
+			"thumbnail": info.Thumbnail,
+			"id":        info.ID,
+		})
 	}
 
 	// Build yt-dlp arguments based on format and quality
-	args, err := buildDownloadArgs(ctx, url, format, quality, savePath, ffmpegPath, noPlaylist, concurrentFragments)
+	selectedURL := url
+	selectedFormat := forcedFormat
+	useExtractor := forcedFormat != ""
+	if len(xhsNoteURL) > 0 && strings.TrimSpace(xhsNoteURL[0]) != "" {
+		if selectedFormat == "" {
+			chosenFormat, extractorSelected, chooseErr := chooseXHSVideoFormat(ctx, xhsNoteURL[0], url, format, quality, xhsCookieArgs)
+			if chooseErr != nil {
+				return chooseErr
+			}
+			selectedFormat = chosenFormat
+			useExtractor = extractorSelected
+		}
+		chosenURL, urlErr := xhsDownloadURL(xhsNoteURL[0], url, useExtractor)
+		if urlErr != nil {
+			return fmt.Errorf("XHS_FORMAT_INSPECTION: choose download URL: %w", urlErr)
+		}
+		selectedURL = chosenURL
+	}
+	args, err := buildDownloadArgs(ctx, selectedURL, format, quality, savePath, ffmpegPath, noPlaylist, concurrentFragments)
 	if err != nil {
 		return err
+	}
+	if selectedFormat != "" {
+		args = replaceFormatSelector(args, selectedFormat)
 	}
 	if len(xhsCookieArgs) > 0 {
 		args = replaceBrowserCookieArgsWithXHSSession(args, xhsCookieArgs)
 	}
-	args = append(args, url)
+	args = append(args, selectedURL)
 	// Add verbose for better debugging in app.log
 	// args = append(args, "--verbose")
 
@@ -310,6 +690,16 @@ func downloadVideoWithXHSSession(ctx context.Context, index int, url, format, qu
 			LogInfo("[DL] Download cancelled by user")
 			return ctx.Err()
 		}
+		if len(xhsNoteURL) > 0 && !useExtractor {
+			directErr := err
+			if lastError != "" {
+				directErr = fmt.Errorf("download failed: %s", lastError)
+			}
+			fallbackFormat := qualityFallbackSelector(quality, format)
+			return retryXHSWithFallback(ctx, xhsNoteURL[0], fallbackFormat, directErr, useExtractor || forcedFormat != "", func(fallbackURL, selector string) error {
+				return downloadVideoWithXHSSessionFormat(ctx, index, fallbackURL, format, quality, savePath, noPlaylist, concurrentFragments, xhsSession, true, selector, xhsNoteURL[0])
+			})
+		}
 		LogError("[DL] Command failed with error: %v", err)
 
 		if lastError != "" {
@@ -341,10 +731,9 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 
 	case "MP4":
 		if quality == "Best" || quality == "Best Quality" {
-			// Ưu tiên stream mp4+m4a native → không cần re-encode
-			// Fallback: bất kỳ bestvideo+bestaudio rồi merge sang mp4
-			args = append(args, "-f",
-				"bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best")
+			// Chọn chất lượng cao nhất mà extractor thực sự trả về; không
+			// giả định direct/native MP4 luôn tồn tại.
+			args = append(args, "-f", xhsBestFormatSelector)
 		} else {
 			h := qualityToHeight(quality)
 			args = append(args, "-f", fmt.Sprintf(
@@ -356,9 +745,9 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 		args = append(args, "--recode-video", "mp4")
 
 	case "MKV":
-		// MKV chứa được mọi codec — không cần ưu tiên ext, không cần recode
+		// MKV chứa được mọi codec — không cần recode.
 		if quality == "Best" || quality == "Best Quality" {
-			args = append(args, "-f", "bestvideo+bestaudio/best")
+			args = append(args, "-f", xhsBestFormatSelector)
 		} else {
 			h := qualityToHeight(quality)
 			args = append(args, "-f", fmt.Sprintf(
@@ -533,8 +922,25 @@ func parseProgress(line string) map[string]interface{} {
 	return progress
 }
 
-// GetVideoMetadata fetches video title, thumbnail and ID
-func GetVideoMetadata(ctx context.Context, url string) (*VideoInfo, error) {
+// GetVideoMetadata fetches video title, thumbnail and ID.
+func GetVideoMetadata(ctx context.Context, rawURL string) (*VideoInfo, error) {
+	normalizedURL, normalizeErr := normalizeVideoInputURL(rawURL)
+	if normalizeErr != nil {
+		return nil, normalizeErr
+	}
+	cookieArgs, cookieErr := manager.GetCookieArgs(ctx, "yt-dlp", normalizedURL)
+	if cookieErr != nil {
+		return nil, cookieErr
+	}
+	return getVideoMetadataWithCookieArgs(ctx, normalizedURL, cookieArgs)
+}
+
+func getVideoMetadataWithCookieArgs(ctx context.Context, rawURL string, cookieArgs []string) (*VideoInfo, error) {
+	normalizedURL, normalizeErr := normalizeVideoInputURL(rawURL)
+	if normalizeErr != nil {
+		return nil, normalizeErr
+	}
+	url := normalizedURL
 	ytdlpPath := getResourcePath("yt-dlp")
 	if ytdlpPath == "" {
 		return nil, fmt.Errorf("yt-dlp not found")
@@ -548,10 +954,6 @@ func GetVideoMetadata(ctx context.Context, url string) (*VideoInfo, error) {
 		args = append(args, "--referer", "https://www.xiaohongshu.com/")
 	}
 
-	cookieArgs, cookieErr := manager.GetCookieArgs(ctx, "yt-dlp", url)
-	if cookieErr != nil {
-		return nil, cookieErr
-	}
 	if len(cookieArgs) > 0 {
 		args = append(args, cookieArgs...)
 	}
@@ -790,9 +1192,25 @@ func getResourcePath(name string) string {
 }
 
 type DownloadFailure struct {
+	ErrorKind      string
 	RequiresCookie bool
 	DisplayMessage string
 	Details        []string
+}
+
+func downloadFailureLabel(kind string) string {
+	labels := map[string]string{
+		"cookie_export":     "Không thể xuất cookie từ trình duyệt",
+		"note_parse":        "Không thể phân tích dữ liệu bài viết Xiaohongshu",
+		"format_inspection": "Không thể kiểm tra định dạng video",
+		"filesystem":        "Không thể ghi file vào thư mục đã chọn",
+		"authentication":    "Xiaohongshu yêu cầu đăng nhập hoặc từ chối session",
+		"download":          "Không thể tải video",
+	}
+	if label := labels[kind]; label != "" {
+		return label
+	}
+	return "Lỗi tải video"
 }
 
 func classifyDownloadFailure(err error, cookiePresent bool, sourceURL string) DownloadFailure {
@@ -802,9 +1220,36 @@ func classifyDownloadFailure(err error, cookiePresent bool, sourceURL string) Do
 
 	message := strings.TrimSpace(err.Error())
 	lower := strings.ToLower(message)
+	errorKind := "download"
+	for marker, kind := range map[string]string{
+		"xhs_cookie_export:":     "cookie_export",
+		"xhs_note_parse:":        "note_parse",
+		"xhs_format_inspection:": "format_inspection",
+		"xhs_filesystem:":        "filesystem",
+		"xhs_download:":          "download",
+	} {
+		if strings.Contains(lower, marker) {
+			errorKind = kind
+			break
+		}
+	}
+	if strings.Contains(lower, "read-only file system") || strings.Contains(lower, "permission denied") ||
+		strings.Contains(lower, "unable to open for writing") || strings.Contains(lower, "no space left on device") {
+		errorKind = "filesystem"
+	}
+
+	if errorKind != "download" {
+		return DownloadFailure{
+			ErrorKind:      errorKind,
+			RequiresCookie: false,
+			DisplayMessage: downloadFailureLabel(errorKind),
+			Details:        []string{summarizeErrorForUI(message)},
+		}
+	}
 
 	if strings.Contains(lower, "could not copy") && strings.Contains(lower, "cookie database") {
 		return DownloadFailure{
+			ErrorKind:      "cookie_export",
 			RequiresCookie: false,
 			DisplayMessage: "Lỗi khóa Cookie Chrome/Edge",
 			Details: []string{
@@ -833,8 +1278,9 @@ func classifyDownloadFailure(err error, cookiePresent bool, sourceURL string) Do
 			details = append(details, "Paste a YouTube Cookie header to retry.")
 		}
 		return DownloadFailure{
+			ErrorKind:      "authentication",
 			RequiresCookie: true,
-			DisplayMessage: "Error",
+			DisplayMessage: downloadFailureLabel("authentication"),
 			Details:        details,
 		}
 	}
@@ -842,8 +1288,9 @@ func classifyDownloadFailure(err error, cookiePresent bool, sourceURL string) Do
 	details = append(details, "Download failed.")
 	details = append(details, summarizeErrorForUI(message))
 	return DownloadFailure{
+		ErrorKind:      errorKind,
 		RequiresCookie: false,
-		DisplayMessage: "Error",
+		DisplayMessage: downloadFailureLabel(errorKind),
 		Details:        details,
 	}
 }

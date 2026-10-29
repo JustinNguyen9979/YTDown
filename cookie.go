@@ -71,16 +71,20 @@ func (c *CookieConfig) restorePersisted(p persistedCookieConfig) {
 }
 
 type temporaryCookieState struct {
-	mu                sync.RWMutex
-	header            string
-	cookies           []parsedCookie
-	tempFile          string
-	xhsSession        string            // Cache for Xiaohongshu session
-	xhsCookieFiles    map[string]string // Temporary Netscape cookie files keyed by allowed XHS domain scope
-	xhsSessionBrowser string            // Browser associated with the cached session
-	xhsSessionProfile string            // Profile associated with the cached session
-	xhsCacheTime      time.Time         // When the cache was last updated
-	domainBrowserData map[string]*BrowserExportData
+	mu                 sync.RWMutex
+	header             string
+	cookies            []parsedCookie
+	tempFile           string
+	xhsSession         string            // Cached candidate or verified Xiaohongshu session
+	xhsSessionDomain   string            // Domain source for the cached Xiaohongshu session
+	xhsSessionVerified bool              // Whether a download succeeded with the cached session
+	xhsAttemptSession  string            // Session currently being tried before cache replacement
+	xhsAttemptDomain   string            // Domain source for the session currently being tried
+	xhsCookieFiles     map[string]string // Temporary Netscape cookie files keyed by allowed XHS domain scope
+	xhsSessionBrowser  string            // Browser associated with the cached session
+	xhsSessionProfile  string            // Profile associated with the cached session
+	xhsCacheTime       time.Time         // When the cache was last updated
+	domainBrowserData  map[string]*BrowserExportData
 }
 
 type parsedCookie struct {
@@ -919,7 +923,7 @@ func (m *CookieManager) GetBrowserData(ctx context.Context, browser string, targ
 		return data, nil
 	}
 
-	newData, err := m.ExtractBrowserDataForDomain(ctx, browser, targetHost)
+	newData, err := m.extractBrowserDataForTarget(ctx, browser, targetHost, targetURL)
 	if err != nil {
 		return nil, err
 	}
@@ -931,7 +935,29 @@ func (m *CookieManager) GetBrowserData(ctx context.Context, browser string, targ
 	return newData, nil
 }
 
+func defaultCookieExportURL(targetHost string) string {
+	if strings.TrimSpace(targetHost) == "" {
+		return "https://www.youtube.com/"
+	}
+	if strings.Contains(targetHost, "://") {
+		return canonicalCookieExportURL(targetHost)
+	}
+	return canonicalCookieExportURL("https://" + strings.TrimPrefix(targetHost, "//"))
+}
+
 func (m *CookieManager) ExtractBrowserDataForDomain(ctx context.Context, browser string, targetHost string) (*BrowserExportData, error) {
+	return m.extractBrowserDataForTarget(ctx, browser, targetHost, defaultCookieExportURL(targetHost))
+}
+
+func browserExportURLForHost(targetHost string) string {
+	return defaultCookieExportURL(targetHost)
+}
+
+func (m *CookieManager) extractBrowserDataForDomainAndURL(ctx context.Context, browser, targetHost, targetURL string) (*BrowserExportData, error) {
+	return m.extractBrowserDataForTarget(ctx, browser, targetHost, targetURL)
+}
+
+func (m *CookieManager) extractBrowserDataForTarget(ctx context.Context, browser, targetHost, targetURL string) (*BrowserExportData, error) {
 	// ── Bước 1: Thử kooky ──────────────────────────────────────────────
 	data, kookyErr := m.extractBrowserDataViaKooky(ctx, browser, targetHost)
 	if kookyErr == nil && data != nil {
@@ -965,10 +991,10 @@ func (m *CookieManager) ExtractBrowserDataForDomain(ctx context.Context, browser
 
 	// ── Bước 2: Fallback sang yt-dlp ───────────────────────────────────
 	LogInfo("[Cookie] Falling back to yt-dlp for %s", browser)
-	return m.extractBrowserDataViaYTDLP(ctx, browser, targetHost)
+	return m.extractBrowserDataViaYTDLP(ctx, browser, targetHost, targetURL)
 }
 
-func (m *CookieManager) extractBrowserDataViaKooky(ctx context.Context, browser string, targetHost string) (result *BrowserExportData, err error) {
+func (m *CookieManager) extractBrowserDataViaKooky(ctx context.Context, browser, targetHost string) (result *BrowserExportData, err error) {
 	browser = normalizeBrowserName(browser)
 	defer func() {
 		if r := recover(); r != nil {
@@ -1008,11 +1034,20 @@ func (m *CookieManager) extractBrowserDataViaKooky(ctx context.Context, browser 
 			relevantDomains = append(relevantDomains, base)
 		}
 	}
-	// Special domain logic
+	// Special domain logic. For XHS, keep the requested session domain
+	// isolated: RedNote and Xiaohongshu sessions are not interchangeable.
 	if strings.Contains(targetHost, "youtube.com") || strings.Contains(targetHost, "youtu.be") {
 		relevantDomains = []string{"youtube.com"} // ONLY youtube.com, removed google.com per user request
 	} else if IsXiaohongshu(targetHost) {
-		relevantDomains = xhsDomains // tự động lấy toàn bộ domain đã khai báo, gồm rednote.com
+		normalizedTarget := strings.ToLower(strings.TrimSuffix(targetHost, "."))
+		switch {
+		case normalizedTarget == "rednote.com" || strings.HasSuffix(normalizedTarget, ".rednote.com"):
+			relevantDomains = []string{"rednote.com"}
+		case normalizedTarget == "xiaohongshu.com" || strings.HasSuffix(normalizedTarget, ".xiaohongshu.com"):
+			relevantDomains = []string{"xiaohongshu.com"}
+		default:
+			relevantDomains = xhsDomains
+		}
 	}
 
 	var filters []kooky.Filter
@@ -1180,7 +1215,7 @@ func (m *CookieManager) extractBrowserDataViaKooky(ctx context.Context, browser 
 			return nil, fmt.Errorf("selected %s profile contains no valid cookies", browser)
 		}
 		LogInfo("[Cookie] kooky returned no valid cookies for %s, falling back to yt-dlp", browser)
-		return m.extractBrowserDataViaYTDLP(ctx, browser, targetHost)
+		return m.extractBrowserDataViaYTDLP(ctx, browser, targetHost, defaultCookieExportURL(targetHost))
 	}
 
 	return data, nil
@@ -1281,10 +1316,14 @@ func isXHSNoteURL(rawURL string) bool {
 		u.Query().Get("noteId") != ""
 }
 
-func IsXiaohongshu(url string) bool {
-	lower := strings.ToLower(url)
+func IsXiaohongshu(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Hostname() == "" {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
 	for _, domain := range xhsDomains {
-		if strings.Contains(lower, domain) {
+		if host == domain || strings.HasSuffix(host, "."+domain) {
 			return true
 		}
 	}
@@ -1313,6 +1352,10 @@ func (m *CookieManager) invalidateXHSSessionCache(browser, profile string) {
 		}
 		m.state.xhsCookieFiles = nil
 		m.state.xhsSession = ""
+		m.state.xhsSessionDomain = ""
+		m.state.xhsSessionVerified = false
+		m.state.xhsAttemptSession = ""
+		m.state.xhsAttemptDomain = ""
 		m.state.xhsSessionBrowser = ""
 		m.state.xhsSessionProfile = ""
 		m.state.xhsCacheTime = time.Time{}
@@ -1340,17 +1383,25 @@ func (m *CookieManager) clearSensitiveCookieState() {
 	m.state.xhsCookieFiles = nil
 	m.state.domainBrowserData = make(map[string]*BrowserExportData)
 	m.state.xhsSession = ""
+	m.state.xhsSessionDomain = ""
+	m.state.xhsSessionVerified = false
+	m.state.xhsAttemptSession = ""
+	m.state.xhsAttemptDomain = ""
 	m.state.xhsSessionBrowser = ""
 	m.state.xhsSessionProfile = ""
 	m.state.xhsCacheTime = time.Time{}
 }
 
-// extractWebSessionFromBrowser reads web_session directly from the selected browser cookie store.
-func (m *CookieManager) extractWebSessionFromBrowser(ctx context.Context, browser string, _ string) (string, error) {
+// extractWebSessionFromBrowser reads web_session from the preferred Rednote cookie domain.
+func (m *CookieManager) extractWebSessionFromBrowser(ctx context.Context, browser, noteURL string) (string, error) {
+	session, _, err := m.extractXHSSessionWithFallback(ctx, browser, noteURL)
+	return session, err
+}
+
+func (m *CookieManager) extractWebSessionForDomain(ctx context.Context, browser, noteURL, domain string) (string, error) {
 	browser = normalizeBrowserName(browser)
 	m.extractionMu.Lock()
 	defer m.extractionMu.Unlock()
-
 	m.mu.RLock()
 	selectedBrowser := normalizeBrowserName(m.config.SelectedBrowser)
 	selectedProfile := m.config.SelectedProfile
@@ -1358,30 +1409,141 @@ func (m *CookieManager) extractWebSessionFromBrowser(ctx context.Context, browse
 	if selectedBrowser != browser || selectedProfile == "" {
 		return "", fmt.Errorf("select a %s browser profile before downloading Xiaohongshu", browser)
 	}
+	return m.extractWebSessionForDomainLocked(ctx, browser, selectedProfile, noteURL, domain)
+}
 
-	if session := m.cachedXHSSession(browser, selectedProfile); session != "" {
-		return session, nil
+func (m *CookieManager) extractWebSessionForDomainLocked(ctx context.Context, browser, profile, noteURL, domain string) (string, error) {
+	targetURL, err := xhsCookieExportURL(noteURL, domain)
+	if err != nil {
+		return "", err
 	}
-
-	// Export from the exact browser/profile selected by the user. This is the
-	// same browser-cookie export mechanism used by yt-dlp downloads.
-	data, err := m.extractBrowserDataViaYTDLP(ctx, browser, "www.xiaohongshu.com")
+	targetHost := "www." + domain
+	data, err := m.extractBrowserDataViaYTDLP(ctx, browser, targetHost, targetURL)
 	if err != nil {
 		return "", err
 	}
 	if data == nil || strings.TrimSpace(data.WebSession) == "" {
-		return "", fmt.Errorf("no web_session cookie found in selected browser profile; sign in to Xiaohongshu in that profile and try again")
+		return "", fmt.Errorf("no web_session cookie found for %s in selected browser profile", targetHost)
+	}
+	return strings.TrimSpace(data.WebSession), nil
+}
+
+func xhsCookieExportURL(noteURL, domain string) (string, error) {
+	parsed, err := url.Parse(noteURL)
+	if err != nil || parsed.Hostname() == "" {
+		return "", fmt.Errorf("invalid XHS note URL")
+	}
+	if domain != "rednote.com" && domain != "xiaohongshu.com" {
+		return "", fmt.Errorf("unsupported XHS cookie domain")
+	}
+	parsed.Host = "www." + domain
+	if port := parsed.Port(); port != "" {
+		parsed.Host += ":" + port
+	}
+	return parsed.String(), nil
+}
+
+func (m *CookieManager) alternateXHSSession(ctx context.Context, browser, noteURL, currentDomain string) (string, string, error) {
+	otherDomain := "rednote.com"
+	if currentDomain == "rednote.com" {
+		otherDomain = "xiaohongshu.com"
+	}
+	session, err := m.extractWebSessionForDomain(ctx, browser, noteURL, otherDomain)
+	return session, otherDomain, err
+}
+
+func (m *CookieManager) cachedXHSSessionDetails(browser, profile string) (string, string, bool) {
+	m.state.mu.RLock()
+	defer m.state.mu.RUnlock()
+	if normalizeBrowserName(m.state.xhsSessionBrowser) != normalizeBrowserName(browser) ||
+		filepath.Clean(m.state.xhsSessionProfile) != filepath.Clean(profile) {
+		return "", "", false
+	}
+	return m.state.xhsSession, m.state.xhsSessionDomain, m.state.xhsSessionVerified
+}
+
+func (m *CookieManager) markXHSSessionDownloadSuccess(browser, profile, session, domain string) {
+	m.state.mu.Lock()
+	defer m.state.mu.Unlock()
+	m.state.xhsSession = session
+	m.state.xhsSessionDomain = domain
+	m.state.xhsSessionVerified = true
+	m.state.xhsSessionBrowser = normalizeBrowserName(browser)
+	m.state.xhsSessionProfile = profile
+	m.state.xhsCacheTime = time.Now()
+}
+
+func (m *CookieManager) xhsSessionSource() (string, bool) {
+	m.state.mu.RLock()
+	defer m.state.mu.RUnlock()
+	return m.state.xhsSessionDomain, m.state.xhsSessionVerified
+}
+
+func (m *CookieManager) extractXHSSessionWithFallback(ctx context.Context, browser, noteURL string) (string, string, error) {
+	browser = normalizeBrowserName(browser)
+	m.mu.RLock()
+	selectedBrowser := normalizeBrowserName(m.config.SelectedBrowser)
+	profile := m.config.SelectedProfile
+	m.mu.RUnlock()
+	if selectedBrowser != browser || profile == "" {
+		return "", "", fmt.Errorf("select a %s browser profile before downloading Xiaohongshu", browser)
+	}
+	if session, domain, _ := m.cachedXHSSessionDetails(browser, profile); session != "" {
+		return session, domain, nil
 	}
 
-	session := strings.TrimSpace(data.WebSession)
+	rednoteSession, rednoteErr := m.extractWebSessionForDomain(ctx, browser, noteURL, "rednote.com")
+	if rednoteErr == nil {
+		m.cacheXHSSessionCandidate(browser, profile, rednoteSession, "rednote.com")
+		return rednoteSession, "rednote.com", nil
+	}
+	xhsSession, xhsErr := m.extractWebSessionForDomain(ctx, browser, noteURL, "xiaohongshu.com")
+	if xhsErr == nil {
+		m.cacheXHSSessionCandidate(browser, profile, xhsSession, "xiaohongshu.com")
+		return xhsSession, "xiaohongshu.com", nil
+	}
+	return "", "", fmt.Errorf("web_session unavailable from Rednote (%v) or Xiaohongshu (%w)", rednoteErr, xhsErr)
+}
+
+func (m *CookieManager) cacheXHSSessionCandidate(browser, profile, session, domain string) {
 	m.state.mu.Lock()
+	defer m.state.mu.Unlock()
+	m.state.xhsAttemptSession = session
+	m.state.xhsAttemptDomain = domain
+	if m.state.xhsSessionVerified {
+		return
+	}
 	m.state.xhsSession = session
-	m.state.xhsSessionBrowser = browser
-	m.state.xhsSessionProfile = selectedProfile
+	m.state.xhsSessionDomain = domain
+	m.state.xhsSessionVerified = false
+	m.state.xhsSessionBrowser = normalizeBrowserName(browser)
+	m.state.xhsSessionProfile = profile
 	m.state.xhsCacheTime = time.Now()
-	m.state.mu.Unlock()
-	LogInfo("[Cookie] web_session read from selected %s profile", browser)
-	return session, nil
+}
+
+func (m *CookieManager) commitXHSSession(browser, profile, session, domain string) {
+	m.state.mu.Lock()
+	defer m.state.mu.Unlock()
+	m.state.xhsSession = session
+	m.state.xhsSessionDomain = domain
+	m.state.xhsSessionVerified = true
+	m.state.xhsAttemptSession = ""
+	m.state.xhsAttemptDomain = ""
+	m.state.xhsSessionBrowser = normalizeBrowserName(browser)
+	m.state.xhsSessionProfile = profile
+	m.state.xhsCacheTime = time.Now()
+}
+
+func (m *CookieManager) xhsAttemptSource(session string) string {
+	m.state.mu.RLock()
+	defer m.state.mu.RUnlock()
+	if m.state.xhsAttemptSession == session {
+		return m.state.xhsAttemptDomain
+	}
+	if m.state.xhsSession == session {
+		return m.state.xhsSessionDomain
+	}
+	return ""
 }
 
 func xhsSessionCookieArgs(session string) ([]string, func(), error) {
@@ -1560,39 +1722,68 @@ func replaceBrowserCookieArgsWithXHSSession(args, sessionArgs []string) []string
 }
 
 func xhsCookieExportResult(commandErr error, data []byte, readErr error) (string, error) {
-	if commandErr != nil {
-		return "", xhsCookieExportError(commandErr, readErr)
+	cookies, session, err := browserCookieExportResult(commandErr, data, readErr, "www.xiaohongshu.com")
+	if err != nil {
+		return "", err
 	}
+	if session == "" || len(cookies) == 0 {
+		return "", fmt.Errorf("no web_session cookie found in selected browser profile; sign in to Xiaohongshu and retry")
+	}
+	return session, nil
+}
+
+func browserCookieExportResult(commandErr error, data []byte, readErr error, targetHost string) ([]parsedCookie, string, error) {
 	if readErr != nil {
-		return "", xhsCookieExportError(nil, readErr)
+		return nil, "", xhsCookieExportError(commandErr, readErr)
 	}
-	return extractWebSessionFromNetscapeCookieFile(string(data))
+	if len(data) == 0 {
+		if commandErr != nil {
+			return nil, "", xhsCookieExportError(commandErr, nil)
+		}
+		return nil, "", classifyXHSError("cookie_export", fmt.Errorf("yt-dlp did not write a cookie export"))
+	}
+
+	cookies, session := parseNetscapeCookieFileForDomain(string(data), targetHost)
+	hasValidCookie := false
+	for _, cookie := range cookies {
+		if cookie.Value != "" {
+			hasValidCookie = true
+			break
+		}
+	}
+	if !hasValidCookie {
+		if commandErr != nil {
+			return nil, "", xhsCookieExportError(commandErr, nil)
+		}
+		return nil, "", classifyXHSError("cookie_export", fmt.Errorf("no cookies found for %s in browser export", targetHost))
+	}
+	return cookies, session, nil
 }
 
 func xhsCookieExportError(commandErr, readErr error) error {
 	if commandErr != nil {
-		return fmt.Errorf("yt-dlp could not export cookies from the selected browser profile; verify browser access and macOS privacy permissions, then retry")
+		return classifyXHSError("cookie_export", fmt.Errorf("yt-dlp could not export cookies from the selected browser profile; verify browser access and macOS privacy permissions, then retry"))
 	}
-	return fmt.Errorf("could not read the temporary XHS cookie export; verify temporary storage access and retry: %w", readErr)
+	return classifyXHSError("cookie_export", fmt.Errorf("could not read the temporary XHS cookie export; verify temporary storage access and retry: %w", readErr))
 }
 
 func extractWebSessionFromNetscapeCookieFile(content string) (string, error) {
-	var rednoteSession string
+	var xiaohongshuSession string
 	for _, line := range strings.Split(content, "\n") {
 		parts := strings.Fields(line)
 		if len(parts) < 7 || parts[5] != "web_session" || parts[6] == "" {
 			continue
 		}
 		domain := strings.TrimPrefix(strings.ToLower(parts[0]), ".")
-		if domain == "xiaohongshu.com" || strings.HasSuffix(domain, ".xiaohongshu.com") {
+		if domain == "rednote.com" || strings.HasSuffix(domain, ".rednote.com") {
 			return parts[6], nil
 		}
-		if domain == "rednote.com" || strings.HasSuffix(domain, ".rednote.com") {
-			rednoteSession = parts[6]
+		if xiaohongshuSession == "" && (domain == "xiaohongshu.com" || strings.HasSuffix(domain, ".xiaohongshu.com")) {
+			xiaohongshuSession = parts[6]
 		}
 	}
-	if rednoteSession != "" {
-		return rednoteSession, nil
+	if xiaohongshuSession != "" {
+		return xiaohongshuSession, nil
 	}
 	return "", fmt.Errorf("no web_session cookie found in selected browser profile; sign in to Xiaohongshu in that profile and try again")
 }
@@ -1745,6 +1936,12 @@ func clearManualCookie() {
 	manager.state.tempFile = ""
 	manager.state.cookies = nil
 	manager.state.xhsSession = ""
+	manager.state.xhsSessionDomain = ""
+	manager.state.xhsSessionVerified = false
+	manager.state.xhsAttemptSession = ""
+	manager.state.xhsAttemptDomain = ""
+	manager.state.xhsSessionBrowser = ""
+	manager.state.xhsSessionProfile = ""
 	manager.state.xhsCacheTime = time.Time{}
 	manager.state.domainBrowserData = nil
 	manager.state.mu.Unlock()
@@ -1894,18 +2091,46 @@ func writeTemporaryCookieFile(cookies []parsedCookie, domain string) (string, er
 
 // ── Linux cookie extraction via yt-dlp ────────────────────────────────────
 
-func browserCookieExportArgs(browserSpec, cookieFile string) []string {
+func browserCookieExportArgs(browserSpec, cookieFile, exportURL string) []string {
 	return []string{
 		"--cookies-from-browser", browserSpec,
 		"--cookies", cookieFile,
 		"--no-warnings",
 		"--no-playlist",
+		"--skip-download",
+		exportURL,
 	}
+}
+
+func canonicalCookieExportURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Hostname() == "" {
+		return rawURL
+	}
+
+	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+	canonicalHost := ""
+	switch {
+	case host == "xiaohongshu.com" || strings.HasSuffix(host, ".xiaohongshu.com"):
+		canonicalHost = "www.xiaohongshu.com"
+	case host == "rednote.com" || strings.HasSuffix(host, ".rednote.com"):
+		canonicalHost = "www.rednote.com"
+	case host == "xhslink.com" || strings.HasSuffix(host, ".xhslink.com"):
+		canonicalHost = "rednote.com"
+	default:
+		return rawURL
+	}
+
+	parsed.Host = canonicalHost
+	if parsed.Port() != "" {
+		parsed.Host += ":" + parsed.Port()
+	}
+	return parsed.String()
 }
 
 // extractBrowserDataViaYTDLP dùng yt-dlp --cookies-from-browser thay vì kooky
 // để tránh vấn đề GNOME Keyring/KWallet decrypt trên Linux.
-func (m *CookieManager) extractBrowserDataViaYTDLP(ctx context.Context, browser string, targetHost string) (*BrowserExportData, error) {
+func (m *CookieManager) extractBrowserDataViaYTDLP(ctx context.Context, browser, targetHost, exportURL string) (*BrowserExportData, error) {
 	browser = normalizeBrowserName(browser)
 	ytdlp := getResourcePath("yt-dlp")
 	if ytdlp == "" {
@@ -1944,18 +2169,25 @@ func (m *CookieManager) extractBrowserDataViaYTDLP(ctx context.Context, browser 
 		}
 	}
 
-	cmd := platform.CommandContext(cmdCtx, ytdlp, browserCookieExportArgs(browserSpec, tempCookieFile)...)
-	if output, exportErr := cmd.CombinedOutput(); exportErr != nil {
+	exportURL = canonicalCookieExportURL(exportURL)
+	cmd := platform.CommandContext(cmdCtx, ytdlp, browserCookieExportArgs(browserSpec, tempCookieFile, exportURL)...)
+	output, exportErr := cmd.CombinedOutput()
+	if exportErr != nil {
 		LogDownloadError("browser cookie export failed for %s: %s", browser, string(output))
-		return nil, xhsCookieExportError(exportErr, nil)
 	}
 
-	raw, err := os.ReadFile(tempCookieFile)
-	if err != nil {
-		return nil, fmt.Errorf("cookie file not written by yt-dlp: %w", err)
+	raw, readErr := os.ReadFile(tempCookieFile)
+	if readErr != nil {
+		if exportErr != nil {
+			return nil, xhsCookieExportError(exportErr, readErr)
+		}
+		return nil, fmt.Errorf("cookie file not written by yt-dlp: %w", readErr)
 	}
 
-	cookies, xhsSession := parseNetscapeCookieFileForDomain(string(raw), targetHost)
+	cookies, xhsSession, resultErr := browserCookieExportResult(exportErr, raw, nil, targetHost)
+	if resultErr != nil {
+		return nil, resultErr
+	}
 	userAgent := GetUserAgent(browser)
 
 	result := &BrowserExportData{
@@ -1979,11 +2211,18 @@ func (m *CookieManager) extractBrowserDataViaYTDLP(ctx context.Context, browser 
 func parseNetscapeCookieFileForDomain(content, targetHost string) ([]parsedCookie, string) {
 	var cookies []parsedCookie
 	var xhsSession string
-	var rednoteSession string
+	normalizedTargetHost := strings.ToLower(strings.TrimSuffix(targetHost, "."))
+	requestedXHSDomain := ""
+	if normalizedTargetHost == "rednote.com" || strings.HasSuffix(normalizedTargetHost, ".rednote.com") {
+		requestedXHSDomain = "rednote.com"
+	} else if normalizedTargetHost == "xiaohongshu.com" || strings.HasSuffix(normalizedTargetHost, ".xiaohongshu.com") {
+		requestedXHSDomain = "xiaohongshu.com"
+	}
 
-	// Build relevant domains
 	var relevantDomains []string
-	if IsXiaohongshu(targetHost) {
+	if requestedXHSDomain != "" {
+		relevantDomains = []string{requestedXHSDomain}
+	} else if IsXiaohongshu(targetHost) {
 		relevantDomains = xhsDomains
 	} else if strings.Contains(targetHost, "youtube.com") || strings.Contains(targetHost, "youtu.be") {
 		relevantDomains = []string{"youtube.com"}
@@ -2000,18 +2239,17 @@ func parseNetscapeCookieFileForDomain(content, targetHost string) ([]parsedCooki
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		// Netscape format: domain \t domainFlag \t path \t secure \t expiry \t name \t value
 		parts := strings.Split(line, "\t")
 		if len(parts) < 7 {
 			continue
 		}
 		domain, path, name, value := parts[0], parts[2], parts[5], parts[6]
-
-		// Filter by domain
+		normalizedCookieDomain := strings.Trim(strings.ToLower(domain), ".")
 		if len(relevantDomains) > 0 {
 			matched := false
 			for _, rd := range relevantDomains {
-				if strings.Contains(domain, rd) {
+				normalizedRelevantDomain := strings.Trim(strings.ToLower(rd), ".")
+				if normalizedCookieDomain == normalizedRelevantDomain || strings.HasSuffix(normalizedCookieDomain, "."+normalizedRelevantDomain) {
 					matched = true
 					break
 				}
@@ -2021,37 +2259,34 @@ func parseNetscapeCookieFileForDomain(content, targetHost string) ([]parsedCooki
 			}
 		}
 
-		// Dedup
-		key := strings.TrimPrefix(domain, ".") + "|" + name
+		key := normalizedCookieDomain + "|" + name
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
 
 		var expiry int64
-		fmt.Sscanf(parts[4], "%d", &expiry)
-		secure := strings.EqualFold(parts[3], "TRUE")
-
+		_, _ = fmt.Sscanf(parts[4], "%d", &expiry)
 		cookies = append(cookies, parsedCookie{
-			Domain:  domain,
-			Path:    path,
-			Name:    name,
-			Value:   value,
-			Secure:  secure,
-			Expires: expiry,
+			Domain: domain, Path: path, Name: name, Value: value,
+			Secure: strings.EqualFold(parts[3], "TRUE"), Expires: expiry,
 		})
 
-		if name == "web_session" {
-			normalizedDomain := strings.TrimPrefix(strings.ToLower(domain), ".")
-			if normalizedDomain == "xiaohongshu.com" || strings.HasSuffix(normalizedDomain, ".xiaohongshu.com") {
-				xhsSession = value
-			} else if rednoteSession == "" && (normalizedDomain == "rednote.com" || strings.HasSuffix(normalizedDomain, ".rednote.com")) {
-				rednoteSession = value
-			}
+		if name != "web_session" || value == "" {
+			continue
 		}
-	}
-	if xhsSession == "" {
-		xhsSession = rednoteSession
+		if requestedXHSDomain != "" {
+			if normalizedCookieDomain == requestedXHSDomain {
+				xhsSession = value
+			}
+			continue
+		}
+		if xhsSession == "" && (normalizedCookieDomain == "rednote.com" || strings.HasSuffix(normalizedCookieDomain, ".rednote.com")) {
+			xhsSession = value
+		}
+		if xhsSession == "" && (normalizedCookieDomain == "xiaohongshu.com" || strings.HasSuffix(normalizedCookieDomain, ".xiaohongshu.com")) {
+			xhsSession = value
+		}
 	}
 	return cookies, xhsSession
 }

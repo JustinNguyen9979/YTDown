@@ -798,6 +798,7 @@ func (a *App) runBatchSession(sessionID int64) {
 			runtime.EventsEmit(a.ctx, "batch-error", map[string]interface{}{
 				"index":          index,
 				"error":          err.Error(),
+				"errorKind":      failure.ErrorKind,
 				"displayMessage": failure.DisplayMessage,
 				"details":        failure.Details,
 				"requiresCookie": failure.RequiresCookie,
@@ -1081,6 +1082,7 @@ func (a *App) retryRestrictedBatchDownloads() {
 				runtime.EventsEmit(a.ctx, "batch-error", map[string]interface{}{
 					"index":          item.index,
 					"error":          err.Error(),
+					"errorKind":      failure.ErrorKind,
 					"displayMessage": failure.DisplayMessage,
 					"details":        failure.Details,
 					"requiresCookie": failure.RequiresCookie,

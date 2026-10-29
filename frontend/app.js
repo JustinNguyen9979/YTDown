@@ -2123,10 +2123,20 @@ function updateBatchStatus(index, status) {
 }
 
 function updateBatchError(data) {
-  // Lấy nội dung lỗi
+  // Show the failing pipeline stage separately from its diagnostic details.
+  const errorLabels = {
+    cookie_export: 'Cookie export',
+    note_parse: 'Note parsing',
+    format_inspection: 'Format inspection',
+    filesystem: 'Save path / filesystem',
+    authentication: 'Authentication',
+    download: 'Video download',
+  };
   let errorMsg = '';
   if (data.details && data.details.length > 0) {
-    errorMsg = data.details.join(' · ');
+    const details = data.details.join(' · ');
+    const label = errorLabels[data.errorKind];
+    errorMsg = label ? `${label}: ${details}` : details;
   } else if (data.error) {
     errorMsg = data.error.split('\n')
       .map(l => l.trim())

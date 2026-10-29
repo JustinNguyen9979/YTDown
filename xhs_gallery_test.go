@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ func TestVideoDownloadRoute(t *testing.T) {
 		{name: "Rednote note uses XHS parser", url: "https://www.rednote.com/discovery/item/6a44b3f5000000001700b738?source=webshare", want: videoDownloadXHSNote},
 		{name: "Xiaohongshu note uses XHS parser", url: "https://www.xiaohongshu.com/explore/6a44b3f5000000001700b738", want: videoDownloadXHSNote},
 		{name: "XHS CDN media uses yt-dlp", url: "https://sns-video-bd.xhscdn.com/stream/video.mp4", want: videoDownloadYTDLP},
+		{name: "lookalike Rednote domain uses yt-dlp", url: "https://rednote.com.evil.example/discovery/item/note123", want: videoDownloadYTDLP},
 		{name: "YouTube uses yt-dlp", url: "https://www.youtube.com/watch?v=example", want: videoDownloadYTDLP},
 	}
 	for _, tt := range tests {
@@ -131,6 +133,77 @@ func TestClassifyDownloadFailureUsesSourceSiteGuidance(t *testing.T) {
 	}
 }
 
+func TestGetXHSFetchOptionsUsesSelectedBrowserSessionWhenModeNone(t *testing.T) {
+	originalManager := manager
+	manager = &CookieManager{
+		config: CookieConfig{
+			Mode:            CookieModeNone,
+			SelectedBrowser: "firefox",
+			SelectedProfile: "/synthetic/Firefox/Profile 1",
+		},
+		state: temporaryCookieState{
+			domainBrowserData: make(map[string]*BrowserExportData),
+			xhsSession:        "synthetic-web-session-sentinel",
+			xhsSessionBrowser: "firefox",
+			xhsSessionProfile: "/synthetic/Firefox/Profile 1",
+		},
+	}
+	defer func() { manager = originalManager }()
+
+	opts, err := getXHSFetchOptions(context.Background(), "https://www.rednote.com/discovery/item/synthetic-id")
+	if err != nil {
+		t.Fatalf("getXHSFetchOptions() error = %v", err)
+	}
+	if opts.Cookie != "web_session=synthetic-web-session-sentinel" {
+		t.Fatalf("getXHSFetchOptions() Cookie = %q, want selected-profile session", opts.Cookie)
+	}
+	if got := sanitizeDownloadErrorForLog("request failed: " + opts.Cookie); strings.Contains(got, "synthetic-web-session-sentinel") {
+		t.Fatalf("sanitized error leaked session: %q", got)
+	}
+}
+
+func TestGetXHSFetchOptionsDoesNotUseBrowserSessionWithoutSelectedProfile(t *testing.T) {
+	originalManager := manager
+	manager = &CookieManager{
+		config: CookieConfig{Mode: CookieModeNone, SelectedBrowser: "firefox"},
+		state: temporaryCookieState{
+			domainBrowserData: make(map[string]*BrowserExportData),
+			xhsSession:        "synthetic-session-sentinel",
+			xhsSessionBrowser: "firefox",
+			xhsSessionProfile: "/synthetic/Firefox/Profile 1",
+		},
+	}
+	defer func() { manager = originalManager }()
+
+	opts, err := getXHSFetchOptions(context.Background(), "https://www.rednote.com/discovery/item/synthetic-id")
+	if err != nil {
+		t.Fatalf("getXHSFetchOptions() error = %v", err)
+	}
+	if opts.Cookie != "" {
+		t.Fatal("getXHSFetchOptions() used a browser session without a selected profile")
+	}
+}
+
+func TestGetXHSFetchOptionsPreservesManualCookieMode(t *testing.T) {
+	originalManager := manager
+	manager = &CookieManager{
+		config: CookieConfig{Mode: CookieModeManual},
+		state: temporaryCookieState{
+			header:            "web_session=synthetic-manual-session; other=value",
+			domainBrowserData: make(map[string]*BrowserExportData),
+		},
+	}
+	defer func() { manager = originalManager }()
+
+	opts, err := getXHSFetchOptions(context.Background(), "https://www.xiaohongshu.com/explore/synthetic-id")
+	if err != nil {
+		t.Fatalf("getXHSFetchOptions() error = %v", err)
+	}
+	if opts.Cookie != "web_session=synthetic-manual-session" {
+		t.Fatalf("getXHSFetchOptions() Cookie = %q, want manual web_session", opts.Cookie)
+	}
+}
+
 func TestHasCookieForURLRequiresAnExtractedXHSSession(t *testing.T) {
 	manager := &CookieManager{
 		config: CookieConfig{Mode: CookieModeBrowser, SelectedBrowser: "firefox"},
@@ -228,18 +301,55 @@ func TestXHSSessionCookieArgsRejectEmptySession(t *testing.T) {
 func TestInvalidateXHSSessionCacheForSelectedProfile(t *testing.T) {
 	manager := &CookieManager{
 		state: temporaryCookieState{
-			domainBrowserData: make(map[string]*BrowserExportData),
-			xhsSession:        "stale-session-sentinel",
-			xhsSessionBrowser: "chrome",
-			xhsSessionProfile: "/synthetic/Profile 1",
-			xhsCacheTime:      time.Now(),
+			domainBrowserData:  make(map[string]*BrowserExportData),
+			xhsSession:         "stale-session-sentinel",
+			xhsSessionDomain:   "rednote.com",
+			xhsSessionVerified: true,
+			xhsAttemptSession:  "attempt-session-sentinel",
+			xhsAttemptDomain:   "xiaohongshu.com",
+			xhsSessionBrowser:  "chrome",
+			xhsSessionProfile:  "/synthetic/Profile 1",
+			xhsCacheTime:       time.Now(),
 		},
 	}
 	manager.invalidateXHSSessionCache("chrome", "/synthetic/Profile 1")
 	manager.state.mu.RLock()
 	defer manager.state.mu.RUnlock()
-	if manager.state.xhsSession != "" || !manager.state.xhsCacheTime.IsZero() {
-		t.Fatal("invalidateXHSSessionCache() did not clear the stale selected-profile session")
+	if manager.state.xhsSession != "" || manager.state.xhsSessionDomain != "" || manager.state.xhsSessionVerified ||
+		manager.state.xhsAttemptSession != "" || manager.state.xhsAttemptDomain != "" || !manager.state.xhsCacheTime.IsZero() {
+		t.Fatal("invalidateXHSSessionCache() did not clear cached and attempted sessions")
+	}
+}
+
+func TestCacheXHSSessionCandidatePreservesVerifiedSession(t *testing.T) {
+	manager := &CookieManager{
+		state: temporaryCookieState{
+			domainBrowserData:  make(map[string]*BrowserExportData),
+			xhsSession:         "verified-session",
+			xhsSessionDomain:   "rednote.com",
+			xhsSessionVerified: true,
+			xhsSessionBrowser:  "firefox",
+			xhsSessionProfile:  "/synthetic/Firefox/Profile 1",
+		},
+	}
+
+	manager.cacheXHSSessionCandidate("firefox", "/synthetic/Firefox/Profile 1", "alternate-session", "xiaohongshu.com")
+	gotSession, gotDomain, verified := manager.cachedXHSSessionDetails("firefox", "/synthetic/Firefox/Profile 1")
+	if gotSession != "verified-session" || gotDomain != "rednote.com" || !verified {
+		t.Fatalf("cached session = (%q, %q, %v), want verified Rednote session", gotSession, gotDomain, verified)
+	}
+	if got := manager.xhsAttemptSource("alternate-session"); got != "xiaohongshu.com" {
+		t.Fatalf("attempt source = %q, want xiaohongshu.com", got)
+	}
+}
+
+func TestCommitXHSSessionReplacesCacheAfterSuccessfulDownload(t *testing.T) {
+	manager := &CookieManager{state: temporaryCookieState{domainBrowserData: make(map[string]*BrowserExportData)}}
+	manager.commitXHSSession("Firefox", "/synthetic/Firefox/Profile 1", "verified-session", "xiaohongshu.com")
+
+	gotSession, gotDomain, verified := manager.cachedXHSSessionDetails("firefox", "/synthetic/Firefox/Profile 1")
+	if gotSession != "verified-session" || gotDomain != "xiaohongshu.com" || !verified {
+		t.Fatalf("cached session = (%q, %q, %v), want verified Xiaohongshu session", gotSession, gotDomain, verified)
 	}
 }
 
@@ -331,14 +441,18 @@ func TestClearSensitiveCookieStateRemovesCachedSecretsAndTempFile(t *testing.T) 
 	}
 	manager := &CookieManager{
 		state: temporaryCookieState{
-			header:            "web_session=synthetic-session-sentinel",
-			cookies:           []parsedCookie{{Name: "web_session", Value: "synthetic-session-sentinel"}},
-			xhsCookieFiles:    map[string]string{"xiaohongshu.com": cookiePath},
-			domainBrowserData: map[string]*BrowserExportData{"xhs": {WebSession: "synthetic-session-sentinel"}},
-			xhsSession:        "synthetic-session-sentinel",
-			xhsSessionBrowser: "firefox",
-			xhsSessionProfile: "/synthetic/Firefox/Profile 1",
-			xhsCacheTime:      time.Now(),
+			header:             "web_session=synthetic-session-sentinel",
+			cookies:            []parsedCookie{{Name: "web_session", Value: "synthetic-session-sentinel"}},
+			xhsCookieFiles:     map[string]string{"xiaohongshu.com": cookiePath},
+			domainBrowserData:  map[string]*BrowserExportData{"xhs": {WebSession: "synthetic-session-sentinel"}},
+			xhsSession:         "synthetic-session-sentinel",
+			xhsSessionDomain:   "rednote.com",
+			xhsSessionVerified: true,
+			xhsAttemptSession:  "attempt-session-sentinel",
+			xhsAttemptDomain:   "xiaohongshu.com",
+			xhsSessionBrowser:  "firefox",
+			xhsSessionProfile:  "/synthetic/Firefox/Profile 1",
+			xhsCacheTime:       time.Now(),
 		},
 	}
 
@@ -348,7 +462,8 @@ func TestClearSensitiveCookieStateRemovesCachedSecretsAndTempFile(t *testing.T) 
 	defer manager.state.mu.RUnlock()
 	if manager.state.header != "" || len(manager.state.cookies) != 0 || manager.state.tempFile != "" ||
 		len(manager.state.xhsCookieFiles) != 0 || len(manager.state.domainBrowserData) != 0 || manager.state.xhsSession != "" ||
-		manager.state.xhsSessionBrowser != "" || manager.state.xhsSessionProfile != "" ||
+		manager.state.xhsSessionDomain != "" || manager.state.xhsSessionVerified || manager.state.xhsAttemptSession != "" ||
+		manager.state.xhsAttemptDomain != "" || manager.state.xhsSessionBrowser != "" || manager.state.xhsSessionProfile != "" ||
 		!manager.state.xhsCacheTime.IsZero() {
 		t.Fatal("clearSensitiveCookieState() left cookie data in memory")
 	}
@@ -402,7 +517,7 @@ func TestExtractWebSessionFromNetscapeCookieFile(t *testing.T) {
 	}
 }
 
-func TestExtractWebSessionPrefersXiaohongshuDomainOverRednote(t *testing.T) {
+func TestExtractWebSessionFromNetscapeCookieFilePrefersRednoteDomain(t *testing.T) {
 	content := "# Netscape HTTP Cookie File\n" +
 		".rednote.com\tTRUE\t/\tTRUE\t2147483647\tweb_session\trednote-session\n" +
 		".xiaohongshu.com\tTRUE\t/\tTRUE\t2147483647\tweb_session\txhs-session\n"
@@ -410,31 +525,26 @@ func TestExtractWebSessionPrefersXiaohongshuDomainOverRednote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extractWebSessionFromNetscapeCookieFile() error = %v", err)
 	}
-	if got != "xhs-session" {
-		t.Fatalf("extractWebSessionFromNetscapeCookieFile() = %q, want session scoped to xiaohongshu.com", got)
+	if got != "rednote-session" {
+		t.Fatalf("extractWebSessionFromNetscapeCookieFile() = %q, want Rednote-scoped session", got)
 	}
 }
 
-func TestExtractWebSessionFromNetscapeCookieFilePrefersXiaohongshuDomain(t *testing.T) {
+func TestParseNetscapeCookieFileForDomainUsesRequestedSessionDomain(t *testing.T) {
 	content := "# Netscape HTTP Cookie File\n" +
 		".rednote.com\tTRUE\t/\tTRUE\t2147483647\tweb_session\trednote-session\n" +
 		".xiaohongshu.com\tTRUE\t/\tTRUE\t2147483647\tweb_session\txhs-session\n"
-	got, err := extractWebSessionFromNetscapeCookieFile(content)
-	if err != nil {
-		t.Fatalf("extractWebSessionFromNetscapeCookieFile() error = %v", err)
-	}
-	if got != "xhs-session" {
-		t.Fatalf("extractWebSessionFromNetscapeCookieFile() = %q, want Xiaohongshu-scoped session", got)
-	}
-}
-
-func TestParseNetscapeCookieFileForDomainPrefersXiaohongshuSession(t *testing.T) {
-	content := "# Netscape HTTP Cookie File\n" +
-		".rednote.com\tTRUE\t/\tTRUE\t2147483647\tweb_session\trednote-session\n" +
-		".xiaohongshu.com\tTRUE\t/\tTRUE\t2147483647\tweb_session\txhs-session\n"
-	_, got := parseNetscapeCookieFileForDomain(content, "www.xiaohongshu.com")
-	if got != "xhs-session" {
-		t.Fatalf("parseNetscapeCookieFileForDomain() session = %q, want Xiaohongshu-domain session", got)
+	for _, tt := range []struct {
+		host string
+		want string
+	}{
+		{host: "www.rednote.com", want: "rednote-session"},
+		{host: "www.xiaohongshu.com", want: "xhs-session"},
+	} {
+		_, got := parseNetscapeCookieFileForDomain(content, tt.host)
+		if got != tt.want {
+			t.Errorf("parseNetscapeCookieFileForDomain(%q) session = %q, want %q", tt.host, got, tt.want)
+		}
 	}
 }
 
