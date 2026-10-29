@@ -327,37 +327,76 @@ func forwardHeaders(req *http.Request, via []*http.Request) {
 // dưới dạng: window.__INITIAL_STATE__ = { ... }
 // Không có API riêng — đây là cách XHS-Downloader hoạt động.
 
-var statePatterns = []*regexp.Regexp{
-	// Dạng phổ biến nhất
-	regexp.MustCompile(`window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*</script>`),
-	// Dạng kết thúc bằng ;(function
-	regexp.MustCompile(`window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*;\s*\(function`),
-	// Fallback tổng quát
-	regexp.MustCompile(`__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*[;<]`),
-}
-
 func extractState(html string) (map[string]json.RawMessage, error) {
-	var raw string
-	for _, p := range statePatterns {
-		if m := p.FindStringSubmatch(html); len(m) > 1 {
-			raw = m[1]
-			break
-		}
-	}
-	if raw == "" {
+	const marker = "__INITIAL_STATE__"
+	markerIndex := strings.Index(html, marker)
+	if markerIndex < 0 {
 		return nil, fmt.Errorf("XHS_NOTE_PARSE: không tìm thấy __INITIAL_STATE__ trong HTML — kiểm tra lại cấu trúc trang hoặc quyền truy cập")
 	}
 
-	// XHS dùng JS `undefined` (không hợp lệ trong JSON) → thay bằng null
-	raw = strings.ReplaceAll(raw, ":undefined", ":null")
-	raw = strings.ReplaceAll(raw, ",undefined", ",null")
-	raw = strings.ReplaceAll(raw, "[undefined", "[null")
+	assignment := html[markerIndex+len(marker):]
+	equalIndex := strings.IndexByte(assignment, '=')
+	if equalIndex < 0 {
+		return nil, fmt.Errorf("XHS_NOTE_PARSE: __INITIAL_STATE__ không có phép gán dữ liệu")
+	}
+	objectStart := strings.IndexByte(assignment[equalIndex+1:], '{')
+	if objectStart < 0 {
+		return nil, fmt.Errorf("XHS_NOTE_PARSE: không tìm thấy JSON object của __INITIAL_STATE__")
+	}
+	objectStart += equalIndex + 1
+	raw, err := balancedJSONObject(assignment, objectStart)
+	if err != nil {
+		return nil, fmt.Errorf("XHS_NOTE_PARSE: %w", err)
+	}
+
+	// XHS dùng JS `undefined` (không hợp lệ trong JSON) → thay bằng null.
+	// Dùng boundary thay vì chỉ bắt vài vị trí cố định vì HTML mới có thể
+	// đặt whitespace hoặc xuống dòng quanh token này.
+	raw = regexp.MustCompile(`\bundefined\b`).ReplaceAllString(raw, "null")
 
 	var state map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &state); err != nil {
 		return nil, fmt.Errorf("XHS_NOTE_PARSE: parse __INITIAL_STATE__ JSON: %w", err)
 	}
 	return state, nil
+}
+
+func balancedJSONObject(input string, start int) (string, error) {
+	if start < 0 || start >= len(input) || input[start] != '{' {
+		return "", fmt.Errorf("JSON object bắt đầu không hợp lệ")
+	}
+
+	depth := 0
+	inString := false
+	escaped := false
+	for i := start; i < len(input); i++ {
+		c := input[i]
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if c == '\\' {
+				escaped = true
+			} else if c == '"' {
+				inString = false
+			}
+			continue
+		}
+
+		switch c {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return input[start : i+1], nil
+			}
+		}
+	}
+	return "", fmt.Errorf("JSON object của __INITIAL_STATE__ chưa đóng")
 }
 
 // ─── Step 4: Điều hướng JSON lấy NoteDetail ──────────────────────────────────

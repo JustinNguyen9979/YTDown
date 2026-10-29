@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -96,6 +97,32 @@ func TestNormalizeVideoInputURLRejectsMalformedURLAndPreservesLookalikeDomain(t 
 	}
 }
 
+func TestReplaceEnvReplacesExistingValues(t *testing.T) {
+	env := []string{"PATH=/usr/bin", "TMPDIR=/", "TMPDIR=/stale", "TMP=/stale"}
+	got := replaceEnv(env, "TMPDIR", "/Users/test/tmp")
+	got = replaceEnv(got, "TMP", "/Users/test/tmp")
+	joined := strings.Join(got, "\n")
+	if strings.Count(joined, "TMPDIR=") != 1 || !strings.Contains(joined, "TMPDIR=/Users/test/tmp") {
+		t.Fatalf("replaceEnv() TMPDIR = %#v", got)
+	}
+	if strings.Count(joined, "TMP=") != 1 || !strings.Contains(joined, "TMP=/Users/test/tmp") {
+		t.Fatalf("replaceEnv() TMP = %#v", got)
+	}
+}
+
+func TestEnsureWritableDownloadTempDir(t *testing.T) {
+	dir, err := ensureWritableDownloadTempDir()
+	if err != nil {
+		t.Fatalf("ensureWritableDownloadTempDir() error = %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	probe := filepath.Join(dir, "write-probe")
+	if err := os.WriteFile(probe, []byte("ok"), 0o600); err != nil {
+		t.Fatalf("temporary directory is not writable: %v", err)
+	}
+}
+
 func TestBuildYTDLPMetadataArgs(t *testing.T) {
 	args := buildYTDLPMetadataArgs("https://www.xiaohongshu.com/discovery/item/note123?token=synthetic", xhsBestFormatSelector, []string{"--cookies", "/tmp/synthetic-cookie-file"})
 	joined := strings.Join(args, " ")
@@ -165,6 +192,33 @@ func TestSelectXHSDirectFormatCombinesVideoOnlyWithAudio(t *testing.T) {
 	if !ok || got != "video-1080+bestaudio" {
 		t.Fatalf("selectXHSDirectFormat() = (%q, %v), want video plus best audio", got, ok)
 	}
+}
+
+func TestBuildDownloadArgsDisablesTikTokFormatProbe(t *testing.T) {
+	args, err := buildDownloadArgs(context.Background(), "https://www.tiktok.com/@user/video/123", "MP4", "Best", "/tmp/output", "/usr/bin/ffmpeg", true, 2)
+	if err != nil {
+		t.Fatalf("buildDownloadArgs() error = %v", err)
+	}
+	if !containsArg(args, "--no-check-formats") {
+		t.Fatalf("TikTok args = %#v, missing --no-check-formats", args)
+	}
+
+	otherArgs, err := buildDownloadArgs(context.Background(), "https://www.youtube.com/watch?v=123", "MP4", "Best", "/tmp/output", "/usr/bin/ffmpeg", true, 2)
+	if err != nil {
+		t.Fatalf("buildDownloadArgs() for YouTube error = %v", err)
+	}
+	if containsArg(otherArgs, "--no-check-formats") {
+		t.Fatalf("YouTube args unexpectedly contain --no-check-formats: %#v", otherArgs)
+	}
+}
+
+func containsArg(args []string, want string) bool {
+	for _, arg := range args {
+		if arg == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestBuildDownloadArgsUsesFrontendSavePathAndQuality(t *testing.T) {

@@ -257,6 +257,10 @@ func TestExtractStateVariants(t *testing.T) {
 			name: "fallback pattern with undefined replacement",
 			html: `<html><script>__INITIAL_STATE__ = {"note":{"noteDetailMap":{"abc":{"note":{"title":"hello","extra":undefined,"items":[undefined]}}}}};</script></html>`,
 		},
+		{
+			name: "nested objects and braces inside strings",
+			html: `<html><script>window.__INITIAL_STATE__ = {"note":{"noteDetailMap":{"abc":{"note":{"title":"hello } world","extra":{"nested":true}}}}}}</script></html>`,
+		},
 	}
 
 	for _, tt := range tests {

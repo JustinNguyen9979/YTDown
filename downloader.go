@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
+	urlpkg "net/url"
 	"os"
 	"os/exec"
 	"os/user"
@@ -102,7 +102,7 @@ func normalizeVideoInputURL(rawURL string) (string, error) {
 	// FE có thể gửi URL đã bị escape theo dạng https:\/\/... hoặc có
 	// backslash trước query separator. yt-dlp cần URL thật, không phải chuỗi escape.
 	rawURL = strings.ReplaceAll(rawURL, "\\", "")
-	parsed, err := url.ParseRequestURI(rawURL)
+	parsed, err := urlpkg.ParseRequestURI(rawURL)
 	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		if err == nil {
 			err = fmt.Errorf("URL must use http or https and include a hostname")
@@ -117,7 +117,7 @@ func normalizeVideoInputURL(rawURL string) (string, error) {
 
 func canonicalizeXHSVideoPageURL(rawURL string) (string, error) {
 	rawURL = strings.ReplaceAll(strings.TrimSpace(rawURL), "\\", "")
-	parsed, err := url.ParseRequestURI(rawURL)
+	parsed, err := urlpkg.ParseRequestURI(rawURL)
 	if err != nil {
 		return "", fmt.Errorf("invalid XHS video page URL: %w", err)
 	}
@@ -130,6 +130,51 @@ func canonicalizeXHSVideoPageURL(rawURL string) (string, error) {
 		}
 	}
 	return parsed.String(), nil
+}
+
+func replaceEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	filtered := make([]string, 0, len(env)+1)
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, prefix) {
+			filtered = append(filtered, entry)
+		}
+	}
+	return append(filtered, prefix+value)
+}
+
+func ensureWritableDownloadTempDir() (string, error) {
+	baseDir := os.TempDir()
+	if baseDir == "" || baseDir == "/" {
+		cacheDir, cacheErr := os.UserCacheDir()
+		if cacheErr != nil {
+			return "", fmt.Errorf("resolve user cache directory: %w", cacheErr)
+		}
+		if cacheDir == "" {
+			return "", fmt.Errorf("resolve user cache directory: empty path")
+		}
+		baseDir = filepath.Join(cacheDir, "ytdown", "tmp")
+	}
+	if err := os.MkdirAll(baseDir, 0o700); err != nil {
+		return "", err
+	}
+	tempDir, err := os.MkdirTemp(baseDir, "yt-dlp-*")
+	if err != nil {
+		return "", err
+	}
+	probe, err := os.CreateTemp(tempDir, "probe-*")
+	if err != nil {
+		_ = os.RemoveAll(tempDir)
+		return "", err
+	}
+	probePath := probe.Name()
+	if err := probe.Close(); err != nil {
+		_ = os.Remove(probePath)
+		_ = os.RemoveAll(tempDir)
+		return "", err
+	}
+	_ = os.Remove(probePath)
+	return tempDir, nil
 }
 
 func parseYTDLPFormatMetadata(data []byte) (ytdlpFormatMetadata, error) {
@@ -548,6 +593,18 @@ func downloadVideoWithXHSSessionFormat(ctx context.Context, index int, url, form
 
 	// Ensure /opt/homebrew/bin and other common paths are in PATH so yt-dlp can find ffmpeg, deno, etc.
 	cmd.Env = os.Environ()
+	if tempDir, tempErr := ensureWritableDownloadTempDir(); tempErr != nil {
+		return fmt.Errorf("create yt-dlp temp directory: %w", tempErr)
+	} else {
+		defer os.RemoveAll(tempDir)
+		// TikTok's JS challenge uses Python tempfile. In a packaged Wails app,
+		// TMPDIR can be inherited as "/", which makes Python try to create
+		// files such as /tmppquamdw2.tmp on the read-only macOS root volume.
+		// Set all common temp variables explicitly for yt-dlp and its helpers.
+		cmd.Env = replaceEnv(cmd.Env, "TMPDIR", tempDir)
+		cmd.Env = replaceEnv(cmd.Env, "TMP", tempDir)
+		cmd.Env = replaceEnv(cmd.Env, "TEMP", tempDir)
+	}
 	if platformManager != nil && platformManager.OSName() == "Windows" {
 		cmd.Env = append(cmd.Env, "PYTHONIOENCODING=utf-8")
 	}
@@ -741,8 +798,13 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 				h, h, h))
 		}
 		args = append(args, "--merge-output-format", "mp4")
-		// Nếu vẫn dính VP9/Opus thì recode → đảm bảo mọi player đọc được
-		args = append(args, "--recode-video", "mp4")
+		// Ép audio về AAC ở bước Merger. TikTok có thể trả về audio MP3;
+		// --recode-video sẽ bỏ qua nếu output đã là MP4, khiến MP3 nằm trong
+		// MP4 và một số player macOS không phát được tiếng.
+		args = append(args,
+			"--postprocessor-args", "Merger+ffmpeg:-c:a aac -b:a 192k",
+			"--recode-video", "mp4",
+		)
 
 	case "MKV":
 		// MKV chứa được mọi codec — không cần recode.
@@ -834,6 +896,14 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 
 	if ffmpegPath != "" {
 		args = append(args, "--ffmpeg-location", ffmpegPath)
+	}
+
+	// TikTok's format availability probe invokes its JS challenge and can
+	// create a temporary probe file at the filesystem root in packaged macOS
+	// apps. Skip that probe; yt-dlp can still download the selected format.
+	if parsedURL, parseErr := urlpkg.Parse(url); parseErr == nil &&
+		(parsedURL.Hostname() == "tiktok.com" || strings.HasSuffix(parsedURL.Hostname(), ".tiktok.com")) {
+		args = append(args, "--no-check-formats")
 	}
 
 	// Get cookie and browser settings
