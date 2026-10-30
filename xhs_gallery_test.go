@@ -11,17 +11,17 @@ import (
 	xhsmodule "ytdown/xhs"
 )
 
-func TestVideoDownloadRoute(t *testing.T) {
+func TestVideoDownloadRouteSeparatesXHSNotePreparation(t *testing.T) {
 	tests := []struct {
 		name string
 		url  string
 		want videoDownloadRoute
 	}{
-		{name: "Rednote note uses XHS parser", url: "https://www.rednote.com/discovery/item/6a44b3f5000000001700b738?source=webshare", want: videoDownloadXHSNote},
-		{name: "Xiaohongshu note uses XHS parser", url: "https://www.xiaohongshu.com/explore/6a44b3f5000000001700b738", want: videoDownloadXHSNote},
-		{name: "XHS CDN media uses yt-dlp", url: "https://sns-video-bd.xhscdn.com/stream/video.mp4", want: videoDownloadYTDLP},
-		{name: "lookalike Rednote domain uses yt-dlp", url: "https://rednote.com.evil.example/discovery/item/note123", want: videoDownloadYTDLP},
-		{name: "YouTube uses yt-dlp", url: "https://www.youtube.com/watch?v=example", want: videoDownloadYTDLP},
+		{name: "Rednote note uses dedicated XHS video path", url: "https://www.rednote.com/discovery/item/6a44b3f5000000001700b738?source=webshare", want: videoDownloadXHSNote},
+		{name: "Xiaohongshu note uses dedicated XHS video path", url: "https://www.xiaohongshu.com/explore/6a44b3f5000000001700b738", want: videoDownloadXHSNote},
+		{name: "XHS CDN media uses normal yt-dlp path", url: "https://sns-video-bd.xhscdn.com/stream/video.mp4", want: videoDownloadYTDLP},
+		{name: "lookalike Rednote domain uses normal yt-dlp path", url: "https://rednote.com.evil.example/discovery/item/note123", want: videoDownloadYTDLP},
+		{name: "YouTube uses normal yt-dlp path", url: "https://www.youtube.com/watch?v=example", want: videoDownloadYTDLP},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

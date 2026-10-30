@@ -261,6 +261,18 @@ func TestExtractStateVariants(t *testing.T) {
 			name: "nested objects and braces inside strings",
 			html: `<html><script>window.__INITIAL_STATE__ = {"note":{"noteDetailMap":{"abc":{"note":{"title":"hello } world","extra":{"nested":true}}}}}}</script></html>`,
 		},
+		{
+			name: "javascript literals outside strings",
+			html: `<html><script>window.__INITIAL_STATE__ = {"note":{"noteDetailMap":{},"value":undefined,"nan":NaN,"infinity":Infinity,"negative":-Infinity,"title":"undefined"}}</script></html>`,
+		},
+		{
+			name: "javascript collection constructors outside strings",
+			html: `<html><script>window.__INITIAL_STATE__ = {"note":{"noteDetailMap":{}},"set":new Set([]),"map":new Map([]),"title":"new Set([])"}</script></html>`,
+		},
+		{
+			name: "skips invalid state and uses next marker",
+			html: `<script>window.__INITIAL_STATE__ = {"broken": invalid }</script><script>window.__INITIAL_STATE__ = {"note":{"noteDetailMap":{}}}</script>`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -645,6 +657,12 @@ func TestBuildInfoVideoPost(t *testing.T) {
 					H264 []struct {
 						MasterURL string `json:"masterUrl"`
 					} `json:"h264"`
+					H265 []struct {
+						MasterURL string `json:"masterUrl"`
+					} `json:"h265"`
+					AV1 []struct {
+						MasterURL string `json:"masterUrl"`
+					} `json:"av1"`
 				} `json:"stream"`
 			} `json:"media"`
 		}{},

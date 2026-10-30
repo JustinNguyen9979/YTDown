@@ -329,36 +329,159 @@ func forwardHeaders(req *http.Request, via []*http.Request) {
 
 func extractState(html string) (map[string]json.RawMessage, error) {
 	const marker = "__INITIAL_STATE__"
-	markerIndex := strings.Index(html, marker)
-	if markerIndex < 0 {
+	searchFrom := 0
+	var lastErr error
+	for {
+		markerOffset := strings.Index(html[searchFrom:], marker)
+		if markerOffset < 0 {
+			break
+		}
+		markerIndex := searchFrom + markerOffset
+		searchFrom = markerIndex + len(marker)
+
+		assignment := html[searchFrom:]
+		equalIndex := strings.IndexByte(assignment, '=')
+		if equalIndex < 0 {
+			lastErr = fmt.Errorf("__INITIAL_STATE__ không có phép gán dữ liệu")
+			continue
+		}
+		objectStart := strings.IndexByte(assignment[equalIndex+1:], '{')
+		if objectStart < 0 {
+			lastErr = fmt.Errorf("không tìm thấy JSON object của __INITIAL_STATE__")
+			continue
+		}
+		objectStart += equalIndex + 1
+		raw, err := balancedJSONObject(assignment, objectStart)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		raw = normalizeXHSJavaScriptObject(raw)
+		var state map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(raw), &state); err != nil {
+			lastErr = fmt.Errorf("parse __INITIAL_STATE__ JSON: %w", err)
+			continue
+		}
+		return state, nil
+	}
+
+	if lastErr == nil {
 		return nil, fmt.Errorf("XHS_NOTE_PARSE: không tìm thấy __INITIAL_STATE__ trong HTML — kiểm tra lại cấu trúc trang hoặc quyền truy cập")
 	}
+	return nil, fmt.Errorf("XHS_NOTE_PARSE: %w", lastErr)
+}
 
-	assignment := html[markerIndex+len(marker):]
-	equalIndex := strings.IndexByte(assignment, '=')
-	if equalIndex < 0 {
-		return nil, fmt.Errorf("XHS_NOTE_PARSE: __INITIAL_STATE__ không có phép gán dữ liệu")
-	}
-	objectStart := strings.IndexByte(assignment[equalIndex+1:], '{')
-	if objectStart < 0 {
-		return nil, fmt.Errorf("XHS_NOTE_PARSE: không tìm thấy JSON object của __INITIAL_STATE__")
-	}
-	objectStart += equalIndex + 1
-	raw, err := balancedJSONObject(assignment, objectStart)
-	if err != nil {
-		return nil, fmt.Errorf("XHS_NOTE_PARSE: %w", err)
-	}
+func normalizeXHSJavaScriptObject(raw string) string {
+	// Chỉ thay literal/constructor ở ngoài chuỗi JSON, tránh sửa nội dung title/caption.
+	var out strings.Builder
+	out.Grow(len(raw))
+	inString := false
+	escaped := false
+	for i := 0; i < len(raw); {
+		c := raw[i]
+		if inString {
+			out.WriteByte(c)
+			if escaped {
+				escaped = false
+			} else if c == '\\' {
+				escaped = true
+			} else if c == '"' {
+				inString = false
+			}
+			i++
+			continue
+		}
+		if c == '"' {
+			inString = true
+			out.WriteByte(c)
+			i++
+			continue
+		}
 
-	// XHS dùng JS `undefined` (không hợp lệ trong JSON) → thay bằng null.
-	// Dùng boundary thay vì chỉ bắt vài vị trí cố định vì HTML mới có thể
-	// đặt whitespace hoặc xuống dòng quanh token này.
-	raw = regexp.MustCompile(`\bundefined\b`).ReplaceAllString(raw, "null")
+		for _, constructor := range []string{"new Set", "new Map"} {
+			if !strings.HasPrefix(raw[i:], constructor) || !isJSLiteralBoundary(raw, i, len(constructor)) {
+				continue
+			}
+			open := i + len(constructor)
+			for open < len(raw) && (raw[open] == ' ' || raw[open] == '	' || raw[open] == '\n' || raw[open] == '\r') {
+				open++
+			}
+			if open >= len(raw) || raw[open] != '(' {
+				continue
+			}
+			close := balancedParenthesizedExpression(raw, open)
+			if close < 0 {
+				continue
+			}
+			inner := strings.TrimSpace(raw[open+1 : close-1])
+			if constructor == "new Set" && (inner == "" || strings.HasPrefix(inner, "[")) {
+				if inner == "" {
+					inner = "[]"
+				}
+				out.WriteString(inner)
+				i = close
+				goto normalized
+			}
+			if constructor == "new Map" && (inner == "" || inner == "[]") {
+				out.WriteString("{}")
+				i = close
+				goto normalized
+			}
+		}
 
-	var state map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(raw), &state); err != nil {
-		return nil, fmt.Errorf("XHS_NOTE_PARSE: parse __INITIAL_STATE__ JSON: %w", err)
+		for _, literal := range []string{"undefined", "NaN", "Infinity", "-Infinity"} {
+			if strings.HasPrefix(raw[i:], literal) && isJSLiteralBoundary(raw, i, len(literal)) {
+				out.WriteString("null")
+				i += len(literal)
+				goto normalized
+			}
+		}
+		out.WriteByte(c)
+		i++
+	normalized:
 	}
-	return state, nil
+	return out.String()
+}
+
+func balancedParenthesizedExpression(input string, start int) int {
+	depth := 0
+	inString := false
+	escaped := false
+	for i := start; i < len(input); i++ {
+		c := input[i]
+		if inString {
+			if escaped {
+				escaped = false
+			} else if c == '\\' {
+				escaped = true
+			} else if c == '"' {
+				inString = false
+			}
+			continue
+		}
+		if c == '"' {
+			inString = true
+		} else if c == '(' {
+			depth++
+		} else if c == ')' {
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return -1
+}
+
+func isJSLiteralBoundary(raw string, start, length int) bool {
+	isWord := func(c byte) bool {
+		return c == '_' || c == '$' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+	}
+	beforeOK := start == 0 || !isWord(raw[start-1])
+	end := start + length
+	afterOK := end >= len(raw) || !isWord(raw[end])
+	return beforeOK && afterOK
 }
 
 func balancedJSONObject(input string, start int) (string, error) {
@@ -442,6 +565,12 @@ type noteDetailJSON struct {
 				H264 []struct {
 					MasterURL string `json:"masterUrl"`
 				} `json:"h264"`
+				H265 []struct {
+					MasterURL string `json:"masterUrl"`
+				} `json:"h265"`
+				AV1 []struct {
+					MasterURL string `json:"masterUrl"`
+				} `json:"av1"`
 			} `json:"stream"`
 		} `json:"media"`
 	} `json:"video"`
@@ -567,8 +696,16 @@ func buildInfo(note *noteDetailJSON, noteID, format string) *NoteInfo {
 	// Bài video
 	if note.Type == "video" {
 		info.Type = "video"
-		if note.Video != nil && len(note.Video.Media.Stream.H264) > 0 {
-			info.VideoURL = note.Video.Media.Stream.H264[0].MasterURL
+		if note.Video != nil {
+			stream := note.Video.Media.Stream
+			switch {
+			case len(stream.H264) > 0:
+				info.VideoURL = stream.H264[0].MasterURL
+			case len(stream.H265) > 0:
+				info.VideoURL = stream.H265[0].MasterURL
+			case len(stream.AV1) > 0:
+				info.VideoURL = stream.AV1[0].MasterURL
+			}
 		}
 		return info
 	}

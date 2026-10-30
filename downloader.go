@@ -436,6 +436,9 @@ const (
 	videoDownloadXHSNote
 )
 
+// routeVideoDownload keeps the Video-tab XHS handling separate from the
+// Images-tab gallery route. XHS note pages need the note parser first so the
+// video CDN URL can be resolved before yt-dlp is invoked.
 func routeVideoDownload(rawURL string) videoDownloadRoute {
 	if isXHSNoteURL(rawURL) {
 		return videoDownloadXHSNote
@@ -443,7 +446,9 @@ func routeVideoDownload(rawURL string) videoDownloadRoute {
 	return videoDownloadYTDLP
 }
 
-// DownloadVideo downloads a video using yt-dlp or the XHS note parser.
+// DownloadVideo routes XHS/RedNote note pages through the dedicated video
+// preparation path. The path reuses the XHS note/video resolution logic but
+// does not call DownloadXiaohongshuGallery or alter the Images-tab route.
 func DownloadVideo(ctx context.Context, index int, url, format, quality, savePath string, noPlaylist bool, concurrentFragments int) error {
 	normalizedURL, err := normalizeVideoInputURL(url)
 	if err != nil {
@@ -518,9 +523,16 @@ func downloadVideoWithXHSSessionFormat(ctx context.Context, index int, url, form
 
 	var xhsCookieArgs []string
 	var cleanupXHSCookie func()
-	if xhsSession != "" && IsXiaohongshu(url) {
+	// A parsed XHS video is downloaded from its CDN URL, which is not an
+	// xiaohongshu.com page URL. Use the original note URL as the cookie scope
+	// so the session remains available for the CDN request.
+	cookieScopeURL := url
+	if len(xhsNoteURL) > 0 && strings.TrimSpace(xhsNoteURL[0]) != "" {
+		cookieScopeURL = xhsNoteURL[0]
+	}
+	if xhsSession != "" && (IsXiaohongshu(url) || IsXiaohongshu(cookieScopeURL)) {
 		var err error
-		xhsCookieArgs, cleanupXHSCookie, err = manager.xhsSessionCookieArgsForDownload(extractXHSSession(xhsSession), url)
+		xhsCookieArgs, cleanupXHSCookie, err = manager.xhsSessionCookieArgsForDownload(extractXHSSession(xhsSession), cookieScopeURL)
 		if err != nil {
 			return err
 		}
@@ -558,7 +570,12 @@ func downloadVideoWithXHSSessionFormat(ctx context.Context, index int, url, form
 	selectedURL := url
 	selectedFormat := forcedFormat
 	useExtractor := forcedFormat != ""
-	if len(xhsNoteURL) > 0 && strings.TrimSpace(xhsNoteURL[0]) != "" {
+	// When the XHS note parser has already resolved a CDN video URL, keep that
+	// URL. Do not send it back to the note-page extractor: that is the source
+	// of the recurring "No video formats found" failure. Format inspection is
+	// only needed when the input itself is still an XHS note page.
+	parsedVideoURL := len(xhsNoteURL) > 0 && strings.TrimSpace(xhsNoteURL[0]) != "" && !isXHSNoteURL(url)
+	if len(xhsNoteURL) > 0 && strings.TrimSpace(xhsNoteURL[0]) != "" && !parsedVideoURL {
 		if selectedFormat == "" {
 			chosenFormat, extractorSelected, chooseErr := chooseXHSVideoFormat(ctx, xhsNoteURL[0], url, format, quality, xhsCookieArgs)
 			if chooseErr != nil {
@@ -573,7 +590,15 @@ func downloadVideoWithXHSSessionFormat(ctx context.Context, index int, url, form
 		}
 		selectedURL = chosenURL
 	}
-	args, err := buildDownloadArgs(ctx, selectedURL, format, quality, savePath, ffmpegPath, noPlaylist, concurrentFragments)
+	// Build container/referer arguments from the XHS page scope when the
+	// actual media URL is on the CDN. Then replace only the final input with
+	// the resolved CDN URL; this keeps the XHS referer while avoiding the page
+	// extractor.
+	argsURL := selectedURL
+	if parsedVideoURL {
+		argsURL = metadataURL
+	}
+	args, err := buildDownloadArgs(ctx, argsURL, format, quality, savePath, ffmpegPath, noPlaylist, concurrentFragments)
 	if err != nil {
 		return err
 	}
