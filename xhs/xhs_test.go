@@ -3,12 +3,172 @@ package xhs
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
 )
+
+func TestFetchWithDomainFallbackTriesOriginalBeforeAlternate(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		firstHost  string
+		secondHost string
+	}{
+		{
+			name:       "xiaohongshu to rednote",
+			input:      "https://www.xiaohongshu.com/explore/note123?source=share&xsec_token=synthetic",
+			firstHost:  "www.xiaohongshu.com",
+			secondHost: "www.rednote.com",
+		},
+		{
+			name:       "rednote to xiaohongshu",
+			input:      "https://www.rednote.com/discovery/item/note456?source=share&xsec_token=synthetic",
+			firstHost:  "www.rednote.com",
+			secondHost: "www.xiaohongshu.com",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var attempted []string
+			got, err := fetchWithDomainFallback(context.Background(), tt.input, FetchOptions{}, func(_ context.Context, candidate string, _ FetchOptions) (*NoteInfo, error) {
+				attempted = append(attempted, candidate)
+				if len(attempted) == 1 {
+					return nil, fmt.Errorf("primary domain unavailable")
+				}
+				return &NoteInfo{NoteID: "fallback-note"}, nil
+			})
+			if err != nil {
+				t.Fatalf("fetchWithDomainFallback() error = %v", err)
+			}
+			if got == nil || got.NoteID != "fallback-note" {
+				t.Fatalf("fetchWithDomainFallback() = %#v, want fallback note", got)
+			}
+			if len(attempted) != 2 {
+				t.Fatalf("attempted %d URLs, want primary and alternate: %#v", len(attempted), attempted)
+			}
+			for i, wantHost := range []string{tt.firstHost, tt.secondHost} {
+				parsed, err := url.Parse(attempted[i])
+				if err != nil {
+					t.Fatalf("url.Parse(%q) error = %v", attempted[i], err)
+				}
+				if parsed.Host != wantHost || parsed.Path != mustURLPath(t, tt.input) || parsed.RawQuery != "source=share&xsec_token=synthetic" {
+					t.Fatalf("attempted URL %q does not preserve host order, path, and query", attempted[i])
+				}
+			}
+		})
+	}
+}
+
+func TestFetchWithDomainFallbackDoesNotRetryUnsupportedDomain(t *testing.T) {
+	for _, noteURL := range []string{
+		"https://xhslink.com/synthetic?token=abc",
+		"https://www.rednote.com.evil.example/explore/note123",
+	} {
+		t.Run(noteURL, func(t *testing.T) {
+			attempts := 0
+			_, err := fetchWithDomainFallback(context.Background(), noteURL, FetchOptions{}, func(_ context.Context, _ string, _ FetchOptions) (*NoteInfo, error) {
+				attempts++
+				return nil, fmt.Errorf("request failed")
+			})
+			if err == nil {
+				t.Fatal("fetchWithDomainFallback() expected error")
+			}
+			if attempts != 1 {
+				t.Fatalf("attempted %d times for unsupported domain, want 1", attempts)
+			}
+		})
+	}
+}
+
+func TestFetchWithDomainFallbackDoesNotRetryDeadlineExceeded(t *testing.T) {
+	attempts := 0
+	_, err := fetchWithDomainFallback(context.Background(), "https://www.rednote.com/explore/note789", FetchOptions{}, func(_ context.Context, _ string, _ FetchOptions) (*NoteInfo, error) {
+		attempts++
+		return nil, context.DeadlineExceeded
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("fetchWithDomainFallback() error = %v, want deadline exceeded", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempted %d times after deadline, want 1", attempts)
+	}
+}
+
+func TestFetchWithDomainFallbackStopsAfterContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	attempts := 0
+	_, err := fetchWithDomainFallback(ctx, "https://www.rednote.com/explore/note789?xsec_token=synthetic", FetchOptions{}, func(_ context.Context, _ string, _ FetchOptions) (*NoteInfo, error) {
+		attempts++
+		cancel()
+		return nil, fmt.Errorf("request failed")
+	})
+	if err == nil {
+		t.Fatal("fetchWithDomainFallback() expected error")
+	}
+	if attempts != 1 {
+		t.Fatalf("attempted %d times after cancellation, want 1", attempts)
+	}
+}
+
+func TestFetchWithDomainFallbackDoesNotRetrySuccessfulPrimary(t *testing.T) {
+	attempts := 0
+	_, err := fetchWithDomainFallback(context.Background(), "https://xiaohongshu.com/explore/note123", FetchOptions{}, func(_ context.Context, _ string, _ FetchOptions) (*NoteInfo, error) {
+		attempts++
+		return &NoteInfo{NoteID: "primary-note"}, nil
+	})
+	if err != nil {
+		t.Fatalf("fetchWithDomainFallback() error = %v", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempted %d times, want primary only", attempts)
+	}
+}
+
+func mustURLPath(t *testing.T, rawURL string) string {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("url.Parse(%q) error = %v", rawURL, err)
+	}
+	return parsed.Path
+}
+
+func TestCanonicalizeNoteURL(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "rednote note maps to xiaohongshu preserving path and query",
+			input: "https://www.rednote.com/discovery/item/6a44b3f5000000001700b738?source=webshare&xsec_token=synthetic",
+			want:  "https://www.xiaohongshu.com/discovery/item/6a44b3f5000000001700b738?source=webshare&xsec_token=synthetic",
+		},
+		{
+			name:  "xiaohongshu URL remains unchanged",
+			input: "https://www.xiaohongshu.com/explore/64bca1234def567890abcd12?xsec_token=synthetic",
+			want:  "https://www.xiaohongshu.com/explore/64bca1234def567890abcd12?xsec_token=synthetic",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := canonicalizeNoteURL(tt.input)
+			if err != nil {
+				t.Fatalf("canonicalizeNoteURL() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("canonicalizeNoteURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestParseNoteID(t *testing.T) {
 	t.Parallel()
@@ -51,6 +211,21 @@ func TestParseNoteID(t *testing.T) {
 	}
 }
 
+func TestFetchWithOptionsExplainsLoginRedirect(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/login?redirect=%2Fdiscovery%2Fitem%2Fsynthetic", http.StatusFound)
+	}))
+	defer server.Close()
+
+	_, err := FetchWithOptions(context.Background(), server.URL+"/discovery/item/6a44b3f5000000001700b738", FetchOptions{})
+	if err == nil {
+		t.Fatal("FetchWithOptions() expected a login redirect error")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "login") || !strings.Contains(err.Error(), "web_session") {
+		t.Fatalf("FetchWithOptions() error = %q, want actionable login/web_session guidance", err)
+	}
+}
+
 func TestParseNoteIDError(t *testing.T) {
 	t.Parallel()
 
@@ -82,6 +257,22 @@ func TestExtractStateVariants(t *testing.T) {
 			name: "fallback pattern with undefined replacement",
 			html: `<html><script>__INITIAL_STATE__ = {"note":{"noteDetailMap":{"abc":{"note":{"title":"hello","extra":undefined,"items":[undefined]}}}}};</script></html>`,
 		},
+		{
+			name: "nested objects and braces inside strings",
+			html: `<html><script>window.__INITIAL_STATE__ = {"note":{"noteDetailMap":{"abc":{"note":{"title":"hello } world","extra":{"nested":true}}}}}}</script></html>`,
+		},
+		{
+			name: "javascript literals outside strings",
+			html: `<html><script>window.__INITIAL_STATE__ = {"note":{"noteDetailMap":{},"value":undefined,"nan":NaN,"infinity":Infinity,"negative":-Infinity,"title":"undefined"}}</script></html>`,
+		},
+		{
+			name: "javascript collection constructors outside strings",
+			html: `<html><script>window.__INITIAL_STATE__ = {"note":{"noteDetailMap":{}},"set":new Set([]),"map":new Map([]),"title":"new Set([])"}</script></html>`,
+		},
+		{
+			name: "skips invalid state and uses next marker",
+			html: `<script>window.__INITIAL_STATE__ = {"broken": invalid }</script><script>window.__INITIAL_STATE__ = {"note":{"noteDetailMap":{}}}</script>`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -111,12 +302,12 @@ func TestExtractStateErrors(t *testing.T) {
 		{
 			name: "missing state",
 			html: `<html><body>no embedded state</body></html>`,
-			want: "không tìm thấy __INITIAL_STATE__",
+			want: "XHS_NOTE_PARSE",
 		},
 		{
 			name: "invalid JSON",
 			html: `<html><script>window.__INITIAL_STATE__ = {"note": invalid }</script></html>`,
-			want: "parse JSON lỗi",
+			want: "XHS_NOTE_PARSE",
 		},
 	}
 
@@ -466,6 +657,12 @@ func TestBuildInfoVideoPost(t *testing.T) {
 					H264 []struct {
 						MasterURL string `json:"masterUrl"`
 					} `json:"h264"`
+					H265 []struct {
+						MasterURL string `json:"masterUrl"`
+					} `json:"h265"`
+					AV1 []struct {
+						MasterURL string `json:"masterUrl"`
+					} `json:"av1"`
 				} `json:"stream"`
 			} `json:"media"`
 		}{},

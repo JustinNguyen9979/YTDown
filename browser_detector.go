@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -72,6 +73,70 @@ var linuxCmdNames = map[string][]string{
 	"vivaldi":  {"vivaldi", "vivaldi-stable"},
 }
 
+// ── macOS app bundle discovery ────────────────────────────────────────────────
+
+var macOSBrowserBundles = map[string]string{
+	"google chrome.app":             "chrome",
+	"chrome.app":                    "chrome",
+	"chromium.app":                  "chromium",
+	"firefox.app":                   "firefox",
+	"firefox developer edition.app": "firefox",
+	"firefox nightly.app":           "firefox",
+	"safari.app":                    "safari",
+	"microsoft edge.app":            "edge",
+	"edge.app":                      "edge",
+	"brave browser.app":             "brave",
+	"brave.app":                     "brave",
+	"opera.app":                     "opera",
+	"opera gx.app":                  "opera",
+	"vivaldi.app":                   "vivaldi",
+}
+
+func macOSBrowserAppDirectories() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return []string{"/Applications", "/System/Applications"}
+	}
+	return []string{
+		"/Applications",
+		filepath.Join(home, "Applications"),
+		"/System/Applications",
+	}
+}
+
+func detectBrowsersFromAppDirectories(directories []string) []BrowserInfo {
+	found := make(map[string]BrowserInfo)
+	for _, directory := range directories {
+		entries, err := os.ReadDir(directory)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			bundlePath := filepath.Join(directory, entry.Name())
+			info, err := os.Stat(bundlePath)
+			if err != nil || !info.IsDir() {
+				continue
+			}
+			id, ok := macOSBrowserBundles[strings.ToLower(entry.Name())]
+			if !ok {
+				continue
+			}
+			displayName, ok := browserDisplayNames[id]
+			if !ok {
+				displayName = entry.Name()
+			}
+			found[id] = BrowserInfo{ID: id, DisplayName: displayName}
+		}
+	}
+
+	result := make([]BrowserInfo, 0, len(found))
+	for _, browser := range found {
+		result = append(result, browser)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 func DetectInstalledBrowsers() []BrowserInfo {
@@ -79,13 +144,21 @@ func DetectInstalledBrowsers() []BrowserInfo {
 	defer cancel()
 
 	stores := kooky.FindAllCookieStores(ctx)
-
-	seen := map[string]bool{}
+	seen := make(map[string]bool)
 	var result []BrowserInfo
 
+	// macOS app bundles allow detection even before a browser profile exists.
+	if runtime.GOOS == "darwin" {
+		for _, browser := range detectBrowsersFromAppDirectories(macOSBrowserAppDirectories()) {
+			if !seen[browser.ID] {
+				seen[browser.ID] = true
+				result = append(result, browser)
+			}
+		}
+	}
+
 	for _, store := range stores {
-		// Validation thực: file cookie DB có tồn tại không?
-		// epiphany/lynx/uzbl có config dir nhưng không có DB file → bị loại
+		defer store.Close()
 		cookiePath := store.FilePath()
 		if cookiePath == "" {
 			continue
@@ -94,13 +167,7 @@ func DetectInstalledBrowsers() []BrowserInfo {
 			continue
 		}
 
-		// Normalize tên → ID nhất quán
-		raw := strings.ToLower(strings.ReplaceAll(store.Browser(), " ", ""))
-		id, ok := browserNameNormalizer[raw]
-		if !ok {
-			id = raw // Browser lạ vẫn giữ lại
-		}
-
+		id := normalizeBrowserName(store.Browser())
 		if seen[id] {
 			continue
 		}
@@ -110,13 +177,10 @@ func DetectInstalledBrowsers() []BrowserInfo {
 		if !known {
 			displayName = store.Browser()
 		}
-
 		result = append(result, BrowserInfo{ID: id, DisplayName: displayName})
 	}
 
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].ID < result[j].ID
-	})
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
 }
 

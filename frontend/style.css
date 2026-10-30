@@ -1609,6 +1609,40 @@ select.hidden-select {
     border-top: 1px solid var(--border-color);
 }
 
+.log-settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.log-settings-row label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 32px;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.log-settings-row input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent-blue);
+}
+
+.log-settings-row button {
+    min-height: 32px;
+}
+
+.log-settings-status {
+    min-height: 1.5em;
+    margin-top: 8px !important;
+    color: var(--text-secondary) !important;
+    font-size: 13px;
+}
+
 /* Code styling for info sections */
 .info-section code {
     background: var(--bg-secondary);

@@ -26,6 +26,10 @@ export function ClearCookieConfig() {
   return window['go']['main']['App']['ClearCookieConfig']();
 }
 
+export function ClearLog() {
+  return window['go']['main']['App']['ClearLog']();
+}
+
 export function DismissRestrictedFailures() {
   return window['go']['main']['App']['DismissRestrictedFailures']();
 }
@@ -44,6 +48,10 @@ export function GetAvailableBrowsers() {
 
 export function GetBrewInstallStatus() {
   return window['go']['main']['App']['GetBrewInstallStatus']();
+}
+
+export function GetClearLogsOnExit() {
+  return window['go']['main']['App']['GetClearLogsOnExit']();
 }
 
 export function GetCookieConfig() {
@@ -76,6 +84,10 @@ export function InstallDependencies(arg1) {
 
 export function LaunchSetupTerminal() {
   return window['go']['main']['App']['LaunchSetupTerminal']();
+}
+
+export function LogFrontendMessage(arg1, arg2) {
+  return window['go']['main']['App']['LogFrontendMessage'](arg1, arg2);
 }
 
 export function OpenFile(arg1) {
@@ -112,6 +124,10 @@ export function SelectFiles(arg1) {
 
 export function SelectFolder(arg1) {
   return window['go']['main']['App']['SelectFolder'](arg1);
+}
+
+export function SetClearLogsOnExit(arg1) {
+  return window['go']['main']['App']['SetClearLogsOnExit'](arg1);
 }
 
 export function SetGalleryCookie(arg1) {

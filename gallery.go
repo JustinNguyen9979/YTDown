@@ -67,9 +67,11 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 
 	cookieArgs := []string{}
 	if useCookies {
-		if ca := manager.GetCookieArgs(ctx, "gallery-dl", resolvedURL); len(ca) > 0 {
-			cookieArgs = ca
+		ca, cookieErr := manager.GetCookieArgs(ctx, "gallery-dl", resolvedURL)
+		if cookieErr != nil {
+			return cookieErr
 		}
+		cookieArgs = ca
 		args = append(args, cookieArgs...)
 	}
 
@@ -171,7 +173,9 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 	count := 0
 
 	for scanner.Scan() {
-		line := strings.TrimPrefix(strings.TrimSpace(scanner.Text()), "# ")
+		rawLine := scanner.Text()
+		LogProcessOutput("gallery-dl", rawLine)
+		line := strings.TrimPrefix(strings.TrimSpace(rawLine), "# ")
 		if line == "" {
 			continue
 		}

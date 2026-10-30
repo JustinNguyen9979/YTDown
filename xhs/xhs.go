@@ -15,6 +15,7 @@ package xhs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -70,6 +71,18 @@ const defaultAcceptLanguage = "zh-CN,zh;q=0.9,en;q=0.8"
 const defaultAccept = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
 const defaultTimeout = 30 * time.Second
 
+func canonicalizeNoteURL(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("xhs: invalid note URL: %w", err)
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "rednote.com" || host == "www.rednote.com" {
+		u.Host = "www.xiaohongshu.com"
+	}
+	return u.String(), nil
+}
+
 func InferReferer(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Host == "" {
@@ -90,7 +103,73 @@ func Fetch(ctx context.Context, noteURL, cookie, format string) (*NoteInfo, erro
 
 // FetchWithOptions tải dữ liệu từ Xiaohongshu với tham số cấu hình truyền từ bên ngoài.
 func FetchWithOptions(ctx context.Context, noteURL string, opts FetchOptions) (*NoteInfo, error) {
-	// 1. Resolve short-link (xhslink.com) về URL note thật
+	return fetchWithDomainFallback(ctx, noteURL, opts, fetchNote)
+}
+
+func fetchWithDomainFallback(ctx context.Context, noteURL string, opts FetchOptions, fetch func(context.Context, string, FetchOptions) (*NoteInfo, error)) (*NoteInfo, error) {
+	urls, err := noteURLsForFallback(noteURL)
+	if err != nil {
+		return nil, err
+	}
+
+	info, firstErr := fetch(ctx, urls[0], opts)
+	if firstErr == nil || len(urls) == 1 || ctx.Err() != nil || errors.Is(firstErr, context.Canceled) || errors.Is(firstErr, context.DeadlineExceeded) {
+		return info, firstErr
+	}
+
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	fallbackInfo, fallbackErr := fetch(ctx, urls[1], opts)
+	if fallbackErr != nil {
+		return nil, fmt.Errorf("xhs: primary domain failed: %v; alternate domain failed: %w", firstErr, fallbackErr)
+	}
+	return fallbackInfo, nil
+}
+
+func noteURLsForFallback(rawURL string) ([]string, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("xhs: invalid note URL: %w", err)
+	}
+	if parsed.Hostname() == "" {
+		return nil, fmt.Errorf("xhs: invalid note URL: missing hostname")
+	}
+
+	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+	alternateDomain := ""
+	switch {
+	case isDomainOrSubdomain(host, "xiaohongshu.com"):
+		alternateDomain = "rednote.com"
+	case isDomainOrSubdomain(host, "rednote.com"):
+		alternateDomain = "xiaohongshu.com"
+	default:
+		return []string{rawURL}, nil
+	}
+
+	alternate := *parsed
+	prefix := strings.TrimSuffix(host, ".xiaohongshu.com")
+	prefix = strings.TrimSuffix(prefix, ".rednote.com")
+	if prefix == "xiaohongshu.com" || prefix == "rednote.com" {
+		prefix = ""
+	}
+	if prefix != "" {
+		alternate.Host = prefix + "." + alternateDomain
+	} else {
+		alternate.Host = alternateDomain
+	}
+	if port := parsed.Port(); port != "" {
+		alternate.Host += ":" + port
+	}
+	return []string{rawURL, alternate.String()}, nil
+}
+
+func isDomainOrSubdomain(host, domain string) bool {
+	return host == domain || strings.HasSuffix(host, "."+domain)
+}
+
+func fetchNote(ctx context.Context, noteURL string, opts FetchOptions) (*NoteInfo, error) {
+	// 1. Resolve short-link nếu domain hỗ trợ redirect
 	resolvedURL, err := resolveURL(ctx, noteURL, opts)
 	if err != nil {
 		return nil, err
@@ -172,6 +251,9 @@ func resolveURL(ctx context.Context, rawURL string, opts FetchOptions) (string, 
 	client := &http.Client{
 		Timeout: effectiveTimeout(opts),
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if strings.EqualFold(strings.TrimRight(req.URL.Path, "/"), "/login") {
+				return fmt.Errorf("Xiaohongshu redirected to login; sign in to Xiaohongshu in the selected browser and ensure its web_session cookie is available")
+			}
 			if len(via) >= 10 {
 				return fmt.Errorf("stopped after 10 redirects")
 			}
@@ -245,37 +327,199 @@ func forwardHeaders(req *http.Request, via []*http.Request) {
 // dưới dạng: window.__INITIAL_STATE__ = { ... }
 // Không có API riêng — đây là cách XHS-Downloader hoạt động.
 
-var statePatterns = []*regexp.Regexp{
-	// Dạng phổ biến nhất
-	regexp.MustCompile(`window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*</script>`),
-	// Dạng kết thúc bằng ;(function
-	regexp.MustCompile(`window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*;\s*\(function`),
-	// Fallback tổng quát
-	regexp.MustCompile(`__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*[;<]`),
-}
-
 func extractState(html string) (map[string]json.RawMessage, error) {
-	var raw string
-	for _, p := range statePatterns {
-		if m := p.FindStringSubmatch(html); len(m) > 1 {
-			raw = m[1]
+	const marker = "__INITIAL_STATE__"
+	searchFrom := 0
+	var lastErr error
+	for {
+		markerOffset := strings.Index(html[searchFrom:], marker)
+		if markerOffset < 0 {
 			break
 		}
-	}
-	if raw == "" {
-		return nil, fmt.Errorf("xhs: không tìm thấy __INITIAL_STATE__ trong HTML — kiểm tra lại cookie")
+		markerIndex := searchFrom + markerOffset
+		searchFrom = markerIndex + len(marker)
+
+		assignment := html[searchFrom:]
+		equalIndex := strings.IndexByte(assignment, '=')
+		if equalIndex < 0 {
+			lastErr = fmt.Errorf("__INITIAL_STATE__ không có phép gán dữ liệu")
+			continue
+		}
+		objectStart := strings.IndexByte(assignment[equalIndex+1:], '{')
+		if objectStart < 0 {
+			lastErr = fmt.Errorf("không tìm thấy JSON object của __INITIAL_STATE__")
+			continue
+		}
+		objectStart += equalIndex + 1
+		raw, err := balancedJSONObject(assignment, objectStart)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		raw = normalizeXHSJavaScriptObject(raw)
+		var state map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(raw), &state); err != nil {
+			lastErr = fmt.Errorf("parse __INITIAL_STATE__ JSON: %w", err)
+			continue
+		}
+		return state, nil
 	}
 
-	// XHS dùng JS `undefined` (không hợp lệ trong JSON) → thay bằng null
-	raw = strings.ReplaceAll(raw, ":undefined", ":null")
-	raw = strings.ReplaceAll(raw, ",undefined", ",null")
-	raw = strings.ReplaceAll(raw, "[undefined", "[null")
-
-	var state map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(raw), &state); err != nil {
-		return nil, fmt.Errorf("xhs: parse JSON lỗi: %w", err)
+	if lastErr == nil {
+		return nil, fmt.Errorf("XHS_NOTE_PARSE: không tìm thấy __INITIAL_STATE__ trong HTML — kiểm tra lại cấu trúc trang hoặc quyền truy cập")
 	}
-	return state, nil
+	return nil, fmt.Errorf("XHS_NOTE_PARSE: %w", lastErr)
+}
+
+func normalizeXHSJavaScriptObject(raw string) string {
+	// Chỉ thay literal/constructor ở ngoài chuỗi JSON, tránh sửa nội dung title/caption.
+	var out strings.Builder
+	out.Grow(len(raw))
+	inString := false
+	escaped := false
+	for i := 0; i < len(raw); {
+		c := raw[i]
+		if inString {
+			out.WriteByte(c)
+			if escaped {
+				escaped = false
+			} else if c == '\\' {
+				escaped = true
+			} else if c == '"' {
+				inString = false
+			}
+			i++
+			continue
+		}
+		if c == '"' {
+			inString = true
+			out.WriteByte(c)
+			i++
+			continue
+		}
+
+		for _, constructor := range []string{"new Set", "new Map"} {
+			if !strings.HasPrefix(raw[i:], constructor) || !isJSLiteralBoundary(raw, i, len(constructor)) {
+				continue
+			}
+			open := i + len(constructor)
+			for open < len(raw) && (raw[open] == ' ' || raw[open] == '	' || raw[open] == '\n' || raw[open] == '\r') {
+				open++
+			}
+			if open >= len(raw) || raw[open] != '(' {
+				continue
+			}
+			close := balancedParenthesizedExpression(raw, open)
+			if close < 0 {
+				continue
+			}
+			inner := strings.TrimSpace(raw[open+1 : close-1])
+			if constructor == "new Set" && (inner == "" || strings.HasPrefix(inner, "[")) {
+				if inner == "" {
+					inner = "[]"
+				}
+				out.WriteString(inner)
+				i = close
+				goto normalized
+			}
+			if constructor == "new Map" && (inner == "" || inner == "[]") {
+				out.WriteString("{}")
+				i = close
+				goto normalized
+			}
+		}
+
+		for _, literal := range []string{"undefined", "NaN", "Infinity", "-Infinity"} {
+			if strings.HasPrefix(raw[i:], literal) && isJSLiteralBoundary(raw, i, len(literal)) {
+				out.WriteString("null")
+				i += len(literal)
+				goto normalized
+			}
+		}
+		out.WriteByte(c)
+		i++
+	normalized:
+	}
+	return out.String()
+}
+
+func balancedParenthesizedExpression(input string, start int) int {
+	depth := 0
+	inString := false
+	escaped := false
+	for i := start; i < len(input); i++ {
+		c := input[i]
+		if inString {
+			if escaped {
+				escaped = false
+			} else if c == '\\' {
+				escaped = true
+			} else if c == '"' {
+				inString = false
+			}
+			continue
+		}
+		if c == '"' {
+			inString = true
+		} else if c == '(' {
+			depth++
+		} else if c == ')' {
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return -1
+}
+
+func isJSLiteralBoundary(raw string, start, length int) bool {
+	isWord := func(c byte) bool {
+		return c == '_' || c == '$' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+	}
+	beforeOK := start == 0 || !isWord(raw[start-1])
+	end := start + length
+	afterOK := end >= len(raw) || !isWord(raw[end])
+	return beforeOK && afterOK
+}
+
+func balancedJSONObject(input string, start int) (string, error) {
+	if start < 0 || start >= len(input) || input[start] != '{' {
+		return "", fmt.Errorf("JSON object bắt đầu không hợp lệ")
+	}
+
+	depth := 0
+	inString := false
+	escaped := false
+	for i := start; i < len(input); i++ {
+		c := input[i]
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if c == '\\' {
+				escaped = true
+			} else if c == '"' {
+				inString = false
+			}
+			continue
+		}
+
+		switch c {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return input[start : i+1], nil
+			}
+		}
+	}
+	return "", fmt.Errorf("JSON object của __INITIAL_STATE__ chưa đóng")
 }
 
 // ─── Step 4: Điều hướng JSON lấy NoteDetail ──────────────────────────────────
@@ -321,6 +565,12 @@ type noteDetailJSON struct {
 				H264 []struct {
 					MasterURL string `json:"masterUrl"`
 				} `json:"h264"`
+				H265 []struct {
+					MasterURL string `json:"masterUrl"`
+				} `json:"h265"`
+				AV1 []struct {
+					MasterURL string `json:"masterUrl"`
+				} `json:"av1"`
 			} `json:"stream"`
 		} `json:"media"`
 	} `json:"video"`
@@ -446,8 +696,16 @@ func buildInfo(note *noteDetailJSON, noteID, format string) *NoteInfo {
 	// Bài video
 	if note.Type == "video" {
 		info.Type = "video"
-		if note.Video != nil && len(note.Video.Media.Stream.H264) > 0 {
-			info.VideoURL = note.Video.Media.Stream.H264[0].MasterURL
+		if note.Video != nil {
+			stream := note.Video.Media.Stream
+			switch {
+			case len(stream.H264) > 0:
+				info.VideoURL = stream.H264[0].MasterURL
+			case len(stream.H265) > 0:
+				info.VideoURL = stream.H265[0].MasterURL
+			case len(stream.AV1) > 0:
+				info.VideoURL = stream.AV1[0].MasterURL
+			}
 		}
 		return info
 	}

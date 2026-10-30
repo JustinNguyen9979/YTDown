@@ -18,13 +18,14 @@ import (
 
 // App struct
 type App struct {
-	ctx            context.Context
-	pm             platform.Manager
-	config         *Config
-	batchMu        sync.Mutex
-	currentBatch   *BatchDownloadState
-	galleryMu      sync.Mutex
-	currentGallery *GalleryBatchState
+	ctx                context.Context
+	pm                 platform.Manager
+	config             *Config
+	downloadAccessStop func()
+	batchMu            sync.Mutex
+	currentBatch       *BatchDownloadState
+	galleryMu          sync.Mutex
+	currentGallery     *GalleryBatchState
 }
 
 type GalleryBatchState struct {
@@ -77,7 +78,9 @@ type BinaryVersion struct {
 
 // Config struct for storing settings
 type Config struct {
-	SavePath string `json:"savePath"`
+	SavePath         string `json:"savePath"`
+	SavePathBookmark []byte `json:"savePathBookmark,omitempty"`
+	ClearLogsOnExit  bool   `json:"clearLogsOnExit,omitempty"`
 }
 
 // NewApp creates a new App application struct
@@ -279,9 +282,39 @@ func (a *App) LaunchSetupTerminal() error {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.pm.InjectBinDir()
-	InitLogger()
 	a.loadConfig()
 	manager.LoadConfig()
+	if manager.config.Mode == CookieModeBrowser && manager.config.SelectedBrowser != "" {
+		home, homeErr := os.UserHomeDir()
+		if homeErr != nil {
+			LogWarning("[Permission] Cannot determine browser profile location: %v", homeErr)
+		} else {
+			autoConfig, discoverErr := buildAutomaticBrowserConfig(manager.config.SelectedBrowser, home)
+			if discoverErr != nil {
+				LogWarning("[Permission] Browser profile discovery failed: %v", discoverErr)
+				runtime.EventsEmit(ctx, "cookie-permission-error", discoverErr.Error())
+				manager.config.SelectedProfile = ""
+			} else {
+				manager.config.SelectedProfile = autoConfig.SelectedProfile
+			}
+			manager.config.SelectedProfileBookmark = nil
+			manager.SaveConfig()
+		}
+	}
+	if a.config != nil && len(a.config.SavePathBookmark) > 0 {
+		path, refreshed, stop, err := resolveSecurityScopedBookmark(a.config.SavePathBookmark)
+		if err != nil {
+			LogWarning("[Permission] Could not restore download folder access: %v", err)
+			a.config.SavePathBookmark = nil
+		} else if path != "" {
+			a.config.SavePath = path
+			if len(refreshed) > 0 {
+				a.config.SavePathBookmark = refreshed
+				a.saveConfig()
+			}
+			a.downloadAccessStop = stop
+		}
+	}
 	LogInfo("[Startup] YTDown started")
 }
 
@@ -308,17 +341,17 @@ func (a *App) CheckBinaries() map[string]interface{} {
 func (a *App) shutdown(ctx context.Context) {
 	LogInfo("[Shutdown] Starting cleanup...")
 
-	// 1. Xóa temporary YouTube cookie file
-	clearTemporaryYouTubeCookie()
+	// 1. Wait for cookie extraction to finish, then remove in-memory and temp credentials.
+	manager.clearSensitiveCookieState()
+	LogInfo("[Cleanup] Removed sensitive cookie state")
 
-	// 2. Xóa tất cả temp cookie files trong manager state
-	manager.state.mu.Lock()
-	if manager.state.tempFile != "" {
-		_ = os.RemoveAll(filepath.Dir(manager.state.tempFile))
-		manager.state.tempFile = ""
-		LogInfo("[Cleanup] Removed temp cookie dir")
+	if a.downloadAccessStop != nil {
+		a.downloadAccessStop()
+		a.downloadAccessStop = nil
 	}
-	manager.state.mu.Unlock()
+
+	// 2. Xóa temporary YouTube cookie file
+	clearTemporaryYouTubeCookie()
 
 	// 3. Xóa cache yt-dlp, gallery-dl và temp folder của app
 	cleanAppCache()
@@ -327,9 +360,11 @@ func (a *App) shutdown(ctx context.Context) {
 	manager.SaveConfig()
 	a.saveConfig()
 
-	// 5. Xóa log file (làm CUỐI CÙNG)
+	// Persist the log policy, write the final entry, then close/remove the log.
 	LogInfo("[Shutdown] Cleanup complete. Goodbye!")
-	CleanupLogFile()
+	if err := FinalizeLogger(a.config != nil && a.config.ClearLogsOnExit); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to finalize log file: %v\n", err)
+	}
 }
 
 // cleanAppCache xóa cache của yt-dlp, gallery-dl và temp folder của app
@@ -348,8 +383,6 @@ func cleanAppCache() {
 		filepath.Join(usr.HomeDir, "Library", "Caches", "gallery-dl"),
 		// Linux — yt-dlp / gallery-dl
 		filepath.Join(usr.HomeDir, ".local", "share", "yt-dlp"),
-		// ytdown logs
-		filepath.Join(usr.HomeDir, ".config", "ytdown", "logs"),
 		// temp fragments (download bị dở)
 		filepath.Join(os.TempDir(), "ytdown"),
 	}
@@ -379,32 +412,85 @@ func cleanAppCache() {
 	}
 }
 
-// GetAvailableBrowsers returns a list of installed browsers for cookie extraction
+// LogFrontendMessage forwards browser-console output to the redacting file logger.
+func (a *App) LogFrontendMessage(level, message string) {
+	writeFrontendLog(level, message)
+}
+
+// GetAvailableBrowsers returns a list of installed browsers for cookie extraction.
 func (a *App) GetAvailableBrowsers() []string {
 	return GetInstalledBrowsers()
+}
+
+// GetClearLogsOnExit returns whether session logs are removed when the app closes.
+func (a *App) GetClearLogsOnExit() bool {
+	return a.config != nil && a.config.ClearLogsOnExit
+}
+
+// SetClearLogsOnExit persists the session log retention preference.
+func (a *App) SetClearLogsOnExit(clear bool) error {
+	if a.config == nil {
+		a.loadConfig()
+	}
+	a.config.ClearLogsOnExit = clear
+	a.saveConfig()
+	return nil
+}
+
+// ClearLog removes the current session history and keeps logging active.
+func (a *App) ClearLog() error {
+	if err := ClearLogFile(); err != nil {
+		LogError("[Log] Manual clear failed: %v", err)
+		return err
+	}
+	LogInfo("[Log] Log cleared manually")
+	return nil
 }
 
 // GetCookieConfig returns the current cookie configuration
 func (a *App) GetCookieConfig() CookieConfig {
 	manager.mu.RLock()
 	defer manager.mu.RUnlock()
-	return manager.config
+	config := manager.config
+	config.SelectedProfileBookmark = nil
+	return config
 }
 
 func (a *App) UpdateCookieConfig(mode string, browser string) error {
+	browser = normalizeBrowserName(browser)
+	manager.mu.RLock()
+	currentMode := manager.config.Mode
+	currentBrowser := normalizeBrowserName(manager.config.SelectedBrowser)
+	currentProfile := manager.config.SelectedProfile
+	manager.mu.RUnlock()
+
+	var nextConfig CookieConfig
+	if mode == string(CookieModeBrowser) && browser != "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("cannot determine browser profile location: %w", err)
+		}
+		discoveredConfig, discoveryErr := buildAutomaticBrowserConfig(browser, home)
+		if discoveryErr != nil {
+			return discoveryErr
+		}
+		nextConfig = discoveredConfig
+	} else {
+		nextConfig = CookieConfig{Mode: CookieMode(mode), SelectedBrowser: browser}
+	}
+
+	if currentMode != nextConfig.Mode || currentBrowser != browser || currentProfile != nextConfig.SelectedProfile {
+		manager.clearSensitiveCookieState()
+	}
 	manager.mu.Lock()
-	manager.config.Mode = CookieMode(mode)
-	manager.config.SelectedBrowser = browser
+	manager.config = nextConfig
+	manager.config.SelectedProfileBookmark = nil
 	manager.mu.Unlock()
 	manager.SaveConfig()
 
 	if mode == string(CookieModeBrowser) && browser != "" {
-		// Prefetch User-Agent asynchronously so it's ready when downloading
-		go func(b string) {
-			GetUserAgent(b)
-		}(browser)
+		go func(b string) { GetUserAgent(b) }(browser)
 	}
-
 	return nil
 }
 
@@ -413,16 +499,11 @@ func (a *App) ClearCookieConfig() error {
 	manager.mu.Lock()
 	manager.config.Mode = CookieModeNone
 	manager.config.SelectedBrowser = ""
+	manager.config.SelectedProfile = ""
+	manager.config.SelectedProfileBookmark = nil
 	manager.config.ManualHeader = ""
 	manager.mu.Unlock()
-
-	manager.state.mu.Lock()
-	manager.state.header = ""
-	if manager.state.tempFile != "" {
-		_ = os.RemoveAll(filepath.Dir(manager.state.tempFile))
-		manager.state.tempFile = ""
-	}
-	manager.state.mu.Unlock()
+	manager.clearSensitiveCookieState()
 
 	manager.SaveConfig()
 	LogInfo("[Cookie] Configuration cleared by user")
@@ -431,43 +512,67 @@ func (a *App) ClearCookieConfig() error {
 
 // loadConfig loads configuration from file
 func (a *App) loadConfig() {
-	usr, _ := user.Current()
-	configDir := filepath.Join(usr.HomeDir, ".config", "ytdown")
-	configPath := filepath.Join(configDir, "config.json")
+	home, _ := os.UserHomeDir()
+	a.config = &Config{SavePath: filepath.Join(home, "Downloads")}
 
-	a.config = &Config{
-		SavePath: filepath.Join(usr.HomeDir, "Downloads"),
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		LogWarning("[Config] Could not resolve app config directory: %v", err)
+		return
 	}
-
-	if data, err := os.ReadFile(configPath); err == nil {
-		json.Unmarshal(data, a.config)
+	configPath := filepath.Join(configDir, "YTDown", "config.json")
+	data, err := os.ReadFile(configPath)
+	if err == nil {
+		if err := json.Unmarshal(data, a.config); err != nil {
+			LogWarning("[Config] Could not load app config: %v", err)
+		}
 	}
 }
 
-// saveConfig saves configuration to file
+// saveConfig saves configuration to the OS-specific app config directory.
 func (a *App) saveConfig() {
-	usr, _ := user.Current()
-	configDir := filepath.Join(usr.HomeDir, ".config", "ytdown")
-	configPath := filepath.Join(configDir, "config.json")
-
-	os.MkdirAll(configDir, 0755)
-	if data, err := json.MarshalIndent(a.config, "", "  "); err == nil {
-		os.WriteFile(configPath, data, 0644)
+	if a.config == nil {
+		return
+	}
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		LogWarning("[Config] Could not resolve app config directory: %v", err)
+		return
+	}
+	configDir = filepath.Join(configDir, "YTDown")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		LogWarning("[Config] Could not create app config directory: %v", err)
+		return
+	}
+	data, err := json.MarshalIndent(a.config, "", "  ")
+	if err != nil {
+		LogWarning("[Config] Could not serialize app config: %v", err)
+		return
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.json"), data, 0o600); err != nil {
+		LogWarning("[Config] Could not save app config: %v", err)
 	}
 }
 
 // OpenFolderDialog opens native folder picker
 func (a *App) OpenFolderDialog() string {
 	LogDebug("OpenFolderDialog called")
-	dir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Select Save Folder",
-	})
+	dir, bookmark, stopAccess, err := pickSecurityScopedDirectory(a.ctx, "Select Save Folder", a.config.SavePath)
 	if err != nil {
-		LogError("OpenDirectoryDialog: %v", err)
+		LogError("OpenFolderDialog: %v", err)
 		return a.config.SavePath
 	}
-	LogDebug("Folder selected: %s", dir)
+	if dir == "" {
+		return a.config.SavePath
+	}
+	if a.downloadAccessStop != nil {
+		a.downloadAccessStop()
+	}
+	a.downloadAccessStop = stopAccess
 	a.config.SavePath = dir
+	a.config.SavePathBookmark = bookmark
+	a.saveConfig()
+	LogDebug("Download folder permission granted")
 	return dir
 }
 
@@ -508,7 +613,7 @@ func (a *App) StartDownload(url, format, quality, savePath string, NoPlaylist bo
 		LogDebug("Download goroutine started")
 		err := DownloadVideo(a.ctx, -1, url, format, quality, savePath, NoPlaylist, concurrentFragments)
 		if err != nil {
-			LogError("Download error: %v", err)
+			LogDownloadError("single video download failed: %v", err)
 			runtime.EventsEmit(a.ctx, "download-error", err.Error())
 		}
 	}()
@@ -684,7 +789,8 @@ func (a *App) runBatchSession(sessionID int64) {
 			a.currentBatch.ItemStates[index] = "error"
 			a.batchMu.Unlock()
 
-			failure := classifyDownloadFailure(err, hasTemporaryCookie())
+			LogDownloadError("batch video download failed (index %d): %v", index, err)
+			failure := classifyDownloadFailure(err, manager.hasCookieForURL(url), url)
 			if failure.RequiresCookie {
 				a.trackRestrictedFailure(index, url, err.Error())
 			}
@@ -692,6 +798,7 @@ func (a *App) runBatchSession(sessionID int64) {
 			runtime.EventsEmit(a.ctx, "batch-error", map[string]interface{}{
 				"index":          index,
 				"error":          err.Error(),
+				"errorKind":      failure.ErrorKind,
 				"displayMessage": failure.DisplayMessage,
 				"details":        failure.Details,
 				"requiresCookie": failure.RequiresCookie,
@@ -884,13 +991,16 @@ func (a *App) CheckPlaylist(url string) map[string]interface{} {
 	return result
 }
 
-// GetDefaultSavePath returns default download folder
+// GetDefaultSavePath returns the configured download folder.
 func (a *App) GetDefaultSavePath() string {
-	usr, err := user.Current()
-	if err != nil {
-		return "/Users/" + os.Getenv("USER") + "/Downloads"
+	if a.config != nil && a.config.SavePath != "" {
+		return a.config.SavePath
 	}
-	return filepath.Join(usr.HomeDir, "Downloads")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(os.Getenv("HOME"), "Downloads")
+	}
+	return filepath.Join(home, "Downloads")
 }
 
 func (a *App) trackRestrictedFailure(index int, url, errMsg string) {
@@ -960,7 +1070,8 @@ func (a *App) retryRestrictedBatchDownloads() {
 
 			err := DownloadVideo(a.ctx, item.index, item.url, format, quality, savePath, a.currentBatch.NoPlaylist, concurrentFragments)
 			if err != nil {
-				failure := classifyDownloadFailure(err, true)
+				LogDownloadError("retry video download failed (index %d): %v", item.index, err)
+				failure := classifyDownloadFailure(err, manager.hasCookieForURL(item.url), item.url)
 				a.trackRestrictedFailure(item.index, item.url, err.Error())
 
 				runtime.EventsEmit(a.ctx, "batch-status", map[string]interface{}{
@@ -971,6 +1082,7 @@ func (a *App) retryRestrictedBatchDownloads() {
 				runtime.EventsEmit(a.ctx, "batch-error", map[string]interface{}{
 					"index":          item.index,
 					"error":          err.Error(),
+					"errorKind":      failure.ErrorKind,
 					"displayMessage": failure.DisplayMessage,
 					"details":        failure.Details,
 					"requiresCookie": failure.RequiresCookie,
@@ -1316,7 +1428,7 @@ func (a *App) StartGalleryDownload(url, savePath string) string {
 		// The frontend will handle the UI row.
 		err := DownloadGallery(a.ctx, 0, url, savePath)
 		if err != nil {
-			LogError("Gallery download error: %v", err)
+			LogDownloadError("gallery download failed: %v", err)
 			runtime.EventsEmit(a.ctx, "gallery-error", err.Error())
 		} else {
 			LogInfo("Gallery download complete")
