@@ -36,6 +36,7 @@ type NoteInfo struct {
 	Type      string   // "image" | "video"
 	ImageURLs []string // CDN URLs của từng ảnh trong carousel (đã sẵn sàng tải)
 	VideoURL  string   // URL video (chỉ có khi Type == "video")
+	Thumbnail string   // URL ảnh cover/thumbnail
 }
 
 // FetchOptions chứa các tham số đầu vào có thể truyền từ bên ngoài.
@@ -702,6 +703,15 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func firstNoteImageURL(note *noteDetailJSON, format string) string {
+	for _, image := range note.ImageList {
+		if raw := preferredImageURL(image); raw != "" {
+			return resolveImageURL(raw, format)
+		}
+	}
+	return ""
+}
+
 func buildInfo(note *noteDetailJSON, noteID, format string) *NoteInfo {
 	if format == "" || format == "best" {
 		format = "auto"
@@ -709,11 +719,12 @@ func buildInfo(note *noteDetailJSON, noteID, format string) *NoteInfo {
 	author := firstNonEmpty(note.User.Nickname, note.User.Username, note.User.UserName, note.User.RedID, note.User.RedIDAlt, note.User.UserID, note.Author, note.Creator, note.Username)
 	caption := firstNonEmpty(note.Desc, note.Description, note.Content)
 	info := &NoteInfo{
-		NoteID:  noteID,
-		Title:   note.Title,
-		Caption: caption,
-		Author:  author,
-		Type:    "image",
+		NoteID:    noteID,
+		Title:     note.Title,
+		Caption:   caption,
+		Author:    author,
+		Type:      "image",
+		Thumbnail: firstNoteImageURL(note, format),
 	}
 
 	// Bài video

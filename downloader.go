@@ -1094,6 +1094,42 @@ func metadataValueString(value interface{}) (string, bool) {
 	return "", false
 }
 
+// metadataDeepString handles extractors that keep post text inside nested
+// Facebook story objects, for example creation_story.message.text.
+func metadataDeepString(value interface{}, keys ...string) string {
+	wanted := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		wanted[key] = struct{}{}
+	}
+	var walk func(interface{}) string
+	walk = func(current interface{}) string {
+		switch current := current.(type) {
+		case map[string]interface{}:
+			for _, key := range keys {
+				if _, ok := wanted[key]; !ok {
+					continue
+				}
+				if text, ok := metadataValueString(current[key]); ok {
+					return text
+				}
+			}
+			for _, child := range current {
+				if text := walk(child); text != "" {
+					return text
+				}
+			}
+		case []interface{}:
+			for _, child := range current {
+				if text := walk(child); text != "" {
+					return text
+				}
+			}
+		}
+		return ""
+	}
+	return walk(value)
+}
+
 // GetVideoMetadata fetches video title, thumbnail and ID.
 func GetVideoMetadata(ctx context.Context, rawURL string) (*VideoInfo, error) {
 	normalizedURL, normalizeErr := normalizeVideoInputURL(rawURL)
@@ -1152,7 +1188,10 @@ func getVideoMetadataWithCookieArgs(ctx context.Context, rawURL string, cookieAr
 	}
 
 	title := metadataString(data, "title", "fulltitle", "track")
-	caption := metadataString(data, "description", "caption", "text", "content", "message", "post_text", "body")
+	caption := metadataString(data, "description", "caption", "text", "content", "message", "post_text", "body", "link_description")
+	if caption == "" {
+		caption = metadataDeepString(data, "savable_description", "creation_story", "message", "body", "link_description")
+	}
 	creator := metadataString(data, "uploader", "uploader_id", "channel", "channel_id", "creator", "username", "user")
 	if creator == "" {
 		if uploader, ok := data["uploader_info"].(map[string]interface{}); ok {

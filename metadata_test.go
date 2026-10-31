@@ -15,3 +15,16 @@ func TestMetadataStringFallbacks(t *testing.T) {
 		t.Fatalf("creator fallback = %q, want %q", got, "creator-id")
 	}
 }
+
+func TestMetadataDeepStringFacebookStory(t *testing.T) {
+	data := map[string]interface{}{
+		"creation_story": map[string]interface{}{
+			"message": map[string]interface{}{
+				"text": "Nested Facebook caption",
+			},
+		},
+	}
+	if got := metadataDeepString(data, "creation_story", "message", "body"); got != "Nested Facebook caption" {
+		t.Fatalf("nested caption = %q, want %q", got, "Nested Facebook caption")
+	}
+}

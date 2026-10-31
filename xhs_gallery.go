@@ -63,16 +63,17 @@ func downloadXHSNoteVideo(ctx context.Context, index int, noteURL, format, quali
 	if routeXHSNote(info.Type) != xhsDownloadYTDLP {
 		return fmt.Errorf("xhs: the selected note contains no video")
 	}
-	return downloadXHSVideoWithSessionAndCaption(ctx, index, info.VideoURL, info.Title, info.Caption, info.Author, format, quality, savePath, noPlaylist, threads, fetchOptions.Cookie, noteURL)
+	thumbnail := downloadThumbnailAsBase64(ctx, info.Thumbnail, noteURL)
+	return downloadXHSVideoWithSessionAndCaption(ctx, index, info.VideoURL, thumbnail, info.Title, info.Caption, info.Author, format, quality, savePath, noPlaylist, threads, fetchOptions.Cookie, noteURL)
 }
 
 func downloadXHSVideo(ctx context.Context, index int, videoURL, title, author string, options GalleryDownloadOptions) error {
 	return downloadXHSVideoWithSession(ctx, index, videoURL, title, author, "MP4", "Best", options.SavePath, true, options.Threads, "")
 }
 
-func downloadXHSVideoWithSessionAndCaption(ctx context.Context, index int, videoURL, title, caption, author, format, quality, savePath string, noPlaylist bool, threads int, cookieHeader string, noteURL ...string) error {
+func downloadXHSVideoWithSessionAndCaption(ctx context.Context, index int, videoURL, thumbnail, title, caption, author, format, quality, savePath string, noPlaylist bool, threads int, cookieHeader string, noteURL ...string) error {
 	started := time.Now()
-	metadata := &VideoInfo{Title: title, Caption: caption, Creator: author}
+	metadata := &VideoInfo{Title: title, Caption: caption, Creator: author, Thumbnail: thumbnail}
 	if err := downloadVideoWithXHSSessionFormatMetadata(ctx, index, videoURL, format, quality, savePath, noPlaylist, threads, cookieHeader, true, "", metadata, noteURL...); err != nil {
 		return fmt.Errorf("xhs video download failed: %w", err)
 	}
@@ -124,7 +125,8 @@ func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, opti
 	})
 
 	if routeXHSNote(info.Type) == xhsDownloadYTDLP {
-		return downloadXHSVideoWithSessionAndCaption(ctx, index, info.VideoURL, info.Title, info.Caption, info.Author, "MP4", "Best", options.SavePath, true, options.Threads, galleryVideoCookieHeader(fetchOptions), url)
+		thumbnail := downloadThumbnailAsBase64(ctx, info.Thumbnail, url)
+		return downloadXHSVideoWithSessionAndCaption(ctx, index, info.VideoURL, thumbnail, info.Title, info.Caption, info.Author, "MP4", "Best", options.SavePath, true, options.Threads, galleryVideoCookieHeader(fetchOptions), url)
 	}
 
 	creator := mediaCreator(info.Author)
