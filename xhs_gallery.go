@@ -72,8 +72,9 @@ func downloadXHSVideo(ctx context.Context, index int, videoURL, title, author st
 
 func downloadXHSVideoWithSessionAndCaption(ctx context.Context, index int, videoURL, title, caption, author, format, quality, savePath string, noPlaylist bool, threads int, cookieHeader string, noteURL ...string) error {
 	started := time.Now()
-	if err := downloadXHSVideoWithSession(ctx, index, videoURL, title, author, format, quality, savePath, noPlaylist, threads, cookieHeader, noteURL...); err != nil {
-		return err
+	metadata := &VideoInfo{Title: title, Caption: caption, Creator: author}
+	if err := downloadVideoWithXHSSessionFormatMetadata(ctx, index, videoURL, format, quality, savePath, noPlaylist, threads, cookieHeader, true, "", metadata, noteURL...); err != nil {
+		return fmt.Errorf("xhs video download failed: %w", err)
 	}
 	if err := appendLatestVideoCaption(savePath, author, title, caption, started); err != nil {
 		LogWarning("[XHS] write video caption failed: %v", err)

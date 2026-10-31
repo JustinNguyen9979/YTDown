@@ -529,6 +529,10 @@ func downloadXHSWithSessionFallback(ctx context.Context, index int, videoURL, fo
 }
 
 func downloadVideoWithXHSSessionFormat(ctx context.Context, index int, url, format, quality, savePath string, noPlaylist bool, concurrentFragments int, xhsSession string, metadataKnown bool, forcedFormat string, xhsNoteURL ...string) error {
+	return downloadVideoWithXHSSessionFormatMetadata(ctx, index, url, format, quality, savePath, noPlaylist, concurrentFragments, xhsSession, metadataKnown, forcedFormat, nil, xhsNoteURL...)
+}
+
+func downloadVideoWithXHSSessionFormatMetadata(ctx context.Context, index int, url, format, quality, savePath string, noPlaylist bool, concurrentFragments int, xhsSession string, metadataKnown bool, forcedFormat string, metadataOverride *VideoInfo, xhsNoteURL ...string) error {
 	ytdlpPath := getResourcePath("yt-dlp")
 	ffmpegPath := getResourcePath("ffmpeg")
 
@@ -573,7 +577,9 @@ func downloadVideoWithXHSSessionFormat(ctx context.Context, index int, url, form
 		}
 	}
 	var info *VideoInfo
-	if metadataKnown && len(xhsCookieArgs) > 0 {
+	if metadataOverride != nil {
+		info = metadataOverride
+	} else if metadataKnown && len(xhsCookieArgs) > 0 {
 		info, _ = getVideoMetadataWithCookieArgs(ctx, metadataURL, xhsCookieArgs)
 	} else if !metadataKnown {
 		info, _ = GetVideoMetadata(ctx, metadataURL)
@@ -1056,6 +1062,38 @@ func parseProgress(line string) map[string]interface{} {
 	return progress
 }
 
+func metadataString(data map[string]interface{}, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := metadataValueString(data[key]); ok {
+			return value
+		}
+	}
+	return ""
+}
+
+func metadataValueString(value interface{}) (string, bool) {
+	switch value := value.(type) {
+	case string:
+		value = strings.TrimSpace(value)
+		return value, value != ""
+	case []interface{}:
+		var parts []string
+		for _, item := range value {
+			if text, ok := metadataValueString(item); ok {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, "\n"), len(parts) > 0
+	case map[string]interface{}:
+		for _, key := range []string{"text", "content", "message", "description", "caption", "value"} {
+			if text, ok := metadataValueString(value[key]); ok {
+				return text, true
+			}
+		}
+	}
+	return "", false
+}
+
 // GetVideoMetadata fetches video title, thumbnail and ID.
 func GetVideoMetadata(ctx context.Context, rawURL string) (*VideoInfo, error) {
 	normalizedURL, normalizeErr := normalizeVideoInputURL(rawURL)
@@ -1113,14 +1151,13 @@ func getVideoMetadataWithCookieArgs(ctx context.Context, rawURL string, cookieAr
 		return nil, err
 	}
 
-	title, _ := data["title"].(string)
-	caption, _ := data["description"].(string)
-	creator, _ := data["uploader"].(string)
+	title := metadataString(data, "title", "fulltitle", "track")
+	caption := metadataString(data, "description", "caption", "text", "content", "message", "post_text", "body")
+	creator := metadataString(data, "uploader", "uploader_id", "channel", "channel_id", "creator", "username", "user")
 	if creator == "" {
-		creator, _ = data["channel"].(string)
-	}
-	if creator == "" {
-		creator, _ = data["creator"].(string)
+		if uploader, ok := data["uploader_info"].(map[string]interface{}); ok {
+			creator = metadataString(uploader, "name", "username", "id")
+		}
 	}
 	videoID, _ := data["id"].(string)
 	thumbnailURL, _ := data["thumbnail"].(string)

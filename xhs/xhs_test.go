@@ -569,6 +569,10 @@ func TestBuildInfoImagePost(t *testing.T) {
 		Type:  "normal",
 		User: struct {
 			Nickname string `json:"nickname"`
+			Username string `json:"username"`
+			UserName string `json:"userName"`
+			RedID    string `json:"redId"`
+			RedIDAlt string `json:"red_id"`
 			UserID   string `json:"userId"`
 		}{
 			Nickname: "luna",
@@ -646,6 +650,10 @@ func TestBuildInfoVideoPost(t *testing.T) {
 		Type:  "video",
 		User: struct {
 			Nickname string `json:"nickname"`
+			Username string `json:"username"`
+			UserName string `json:"userName"`
+			RedID    string `json:"redId"`
+			RedIDAlt string `json:"red_id"`
 			UserID   string `json:"userId"`
 		}{
 			Nickname: "luna",

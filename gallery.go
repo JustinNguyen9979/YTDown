@@ -417,11 +417,7 @@ func getGalleryTitle(ctx context.Context, gallerydlPath, url, userAgent string, 
 		if t, ok := item["title"].(string); ok && t != "" {
 			info.Title = t
 		}
-		if c, ok := item["description"].(string); ok && c != "" {
-			info.Caption = c
-		} else if c, ok := item["caption"].(string); ok && c != "" {
-			info.Caption = c
-		}
+		info.Caption = metadataString(item, "description", "caption", "text", "content", "message", "post_text", "body")
 		if info.Title == "" {
 			info.Title = info.Creator
 		}

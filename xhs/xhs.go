@@ -538,11 +538,16 @@ func balancedJSONObject(input string, start int) (string, error) {
 
 // noteDetailJSON là struct tương ứng với field "note" bên trong noteDetailMap
 type noteDetailJSON struct {
-	NoteID    string `json:"noteId"`
-	Title     string `json:"title"`
-	Desc      string `json:"desc"`
-	Type      string `json:"type"` // "normal" = ảnh cuộn, "video" = video
-	ImageList []struct {
+	NoteID      string `json:"noteId"`
+	Title       string `json:"title"`
+	Desc        string `json:"desc"`
+	Description string `json:"description"`
+	Content     string `json:"content"`
+	Author      string `json:"author"`
+	Creator     string `json:"creator"`
+	Username    string `json:"username"`
+	Type        string `json:"type"` // "normal" = ảnh cuộn, "video" = video
+	ImageList   []struct {
 		URLDefault string `json:"urlDefault"`
 		URLPre     string `json:"urlPre"`
 		URL        string `json:"url"`
@@ -559,6 +564,10 @@ type noteDetailJSON struct {
 	} `json:"imageList"`
 	User struct {
 		Nickname string `json:"nickname"`
+		Username string `json:"username"`
+		UserName string `json:"userName"`
+		RedID    string `json:"redId"`
+		RedIDAlt string `json:"red_id"`
 		UserID   string `json:"userId"`
 	} `json:"user"`
 	Video *struct {
@@ -684,15 +693,26 @@ func cdnURL(token, format string) string {
 	}
 }
 
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
 func buildInfo(note *noteDetailJSON, noteID, format string) *NoteInfo {
 	if format == "" || format == "best" {
 		format = "auto"
 	}
+	author := firstNonEmpty(note.User.Nickname, note.User.Username, note.User.UserName, note.User.RedID, note.User.RedIDAlt, note.User.UserID, note.Author, note.Creator, note.Username)
+	caption := firstNonEmpty(note.Desc, note.Description, note.Content)
 	info := &NoteInfo{
 		NoteID:  noteID,
 		Title:   note.Title,
-		Caption: note.Desc,
-		Author:  note.User.Nickname,
+		Caption: caption,
+		Author:  author,
 		Type:    "image",
 	}
 
