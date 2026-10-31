@@ -2116,7 +2116,7 @@ func canonicalCookieExportURL(rawURL string) string {
 	case host == "rednote.com" || strings.HasSuffix(host, ".rednote.com"):
 		canonicalHost = "www.rednote.com"
 	case host == "xhslink.com" || strings.HasSuffix(host, ".xhslink.com"):
-		canonicalHost = "rednote.com"
+		canonicalHost = "www.xiaohongshu.com"
 	default:
 		return rawURL
 	}

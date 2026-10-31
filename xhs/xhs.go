@@ -77,7 +77,7 @@ func canonicalizeNoteURL(rawURL string) (string, error) {
 		return "", fmt.Errorf("xhs: invalid note URL: %w", err)
 	}
 	host := strings.ToLower(u.Hostname())
-	if host == "rednote.com" || host == "www.rednote.com" {
+	if host == "rednote.com" || host == "www.rednote.com" || host == "xhslink.com" || host == "www.xhslink.com" {
 		u.Host = "www.xiaohongshu.com"
 	}
 	return u.String(), nil

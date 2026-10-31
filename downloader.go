@@ -94,6 +94,16 @@ func (metadata ytdlpFormatMetadata) hasVideoQuality() bool {
 	return metadata.Height > 0 || metadata.Width > 0 || metadata.FPS > 0 || metadata.TBR > 0
 }
 
+func isXHSShortLink(rawURL string) bool {
+	parsed, err := urlpkg.ParseRequestURI(strings.TrimSpace(rawURL))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+	return (host == "xhslink.com" || strings.HasSuffix(host, ".xhslink.com")) &&
+		(strings.HasPrefix(parsed.Path, "/o/") || strings.HasPrefix(parsed.Path, "/s/"))
+}
+
 func normalizeVideoInputURL(rawURL string) (string, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
@@ -102,6 +112,14 @@ func normalizeVideoInputURL(rawURL string) (string, error) {
 	// FE có thể gửi URL đã bị escape theo dạng https:\/\/... hoặc có
 	// backslash trước query separator. yt-dlp cần URL thật, không phải chuỗi escape.
 	rawURL = strings.ReplaceAll(rawURL, "\\", "")
+	if isXHSShortLink(rawURL) {
+		manager.mu.RLock()
+		selectedBrowser := manager.config.SelectedBrowser
+		manager.mu.RUnlock()
+		// Resolve only XHS short paths. Normal XHS/RedNote URLs keep the
+		// existing canonicalization path unchanged.
+		rawURL = ResolveShortURL(rawURL, GetUserAgent(selectedBrowser))
+	}
 	parsed, err := urlpkg.ParseRequestURI(rawURL)
 	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		if err == nil {
@@ -123,7 +141,8 @@ func canonicalizeXHSVideoPageURL(rawURL string) (string, error) {
 	}
 	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
 	if host == "rednote.com" || strings.HasSuffix(host, ".rednote.com") ||
-		host == "xiaohongshu.com" || strings.HasSuffix(host, ".xiaohongshu.com") {
+		host == "xiaohongshu.com" || strings.HasSuffix(host, ".xiaohongshu.com") ||
+		host == "xhslink.com" || strings.HasSuffix(host, ".xhslink.com") {
 		parsed.Host = "www.xiaohongshu.com"
 		if port := parsed.Port(); port != "" {
 			parsed.Host += ":" + port

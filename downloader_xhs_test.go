@@ -33,6 +33,11 @@ func TestCanonicalizeXHSVideoPageURL(t *testing.T) {
 			want:  "https://www.xiaohongshu.com/discovery/item/note123?source=share&xsec_token=synthetic",
 		},
 		{
+			name:  "xhslink alias maps to xiaohongshu",
+			input: "http://xhslink.com/o/AHiqLuW5rvi",
+			want:  "http://www.xiaohongshu.com/o/AHiqLuW5rvi",
+		},
+		{
 			name:  "xiaohongshu host remains unchanged",
 			input: "https://www.xiaohongshu.com/explore/note123?source=share",
 			want:  "https://www.xiaohongshu.com/explore/note123?source=share",

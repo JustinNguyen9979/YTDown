@@ -19,6 +19,7 @@ func TestVideoDownloadRouteSeparatesXHSNotePreparation(t *testing.T) {
 	}{
 		{name: "Rednote note uses dedicated XHS video path", url: "https://www.rednote.com/discovery/item/6a44b3f5000000001700b738?source=webshare", want: videoDownloadXHSNote},
 		{name: "Xiaohongshu note uses dedicated XHS video path", url: "https://www.xiaohongshu.com/explore/6a44b3f5000000001700b738", want: videoDownloadXHSNote},
+		{name: "XHS short link uses dedicated XHS video path", url: "http://xhslink.com/o/AHiqLuW5rvi", want: videoDownloadXHSNote},
 		{name: "XHS CDN media uses normal yt-dlp path", url: "https://sns-video-bd.xhscdn.com/stream/video.mp4", want: videoDownloadYTDLP},
 		{name: "lookalike Rednote domain uses normal yt-dlp path", url: "https://rednote.com.evil.example/discovery/item/note123", want: videoDownloadYTDLP},
 		{name: "YouTube uses normal yt-dlp path", url: "https://www.youtube.com/watch?v=example", want: videoDownloadYTDLP},

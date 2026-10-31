@@ -213,7 +213,7 @@ func TestCookieExportURLCanonicalizesOnlyRednotePlatform(t *testing.T) {
 	}{
 		{name: "xiaohongshu www remains canonical", input: "https://www.xiaohongshu.com/explore/abc?source=share", want: "https://www.xiaohongshu.com/explore/abc?source=share"},
 		{name: "xiaohongshu apex becomes www", input: "https://xiaohongshu.com/explore/abc?source=share", want: "https://www.xiaohongshu.com/explore/abc?source=share"},
-		{name: "xhslink", input: "https://xhslink.com/a/short?share=1", want: "https://rednote.com/a/short?share=1"},
+		{name: "xhslink maps to Xiaohongshu", input: "https://xhslink.com/a/short?share=1", want: "https://www.xiaohongshu.com/a/short?share=1"},
 		{name: "rednote www remains canonical", input: "https://www.rednote.com/discovery/item/abc?x=1", want: "https://www.rednote.com/discovery/item/abc?x=1"},
 		{name: "youtube", input: "https://www.youtube.com/watch?v=abc", want: "https://www.youtube.com/watch?v=abc"},
 		{name: "instagram", input: "https://www.instagram.com/reel/abc/", want: "https://www.instagram.com/reel/abc/"},
