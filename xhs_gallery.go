@@ -63,11 +63,22 @@ func downloadXHSNoteVideo(ctx context.Context, index int, noteURL, format, quali
 	if routeXHSNote(info.Type) != xhsDownloadYTDLP {
 		return fmt.Errorf("xhs: the selected note contains no video")
 	}
-	return downloadXHSVideoWithSession(ctx, index, info.VideoURL, info.Title, info.Author, format, quality, savePath, noPlaylist, threads, fetchOptions.Cookie, noteURL)
+	return downloadXHSVideoWithSessionAndCaption(ctx, index, info.VideoURL, info.Title, info.Caption, info.Author, format, quality, savePath, noPlaylist, threads, fetchOptions.Cookie, noteURL)
 }
 
 func downloadXHSVideo(ctx context.Context, index int, videoURL, title, author string, options GalleryDownloadOptions) error {
 	return downloadXHSVideoWithSession(ctx, index, videoURL, title, author, "MP4", "Best", options.SavePath, true, options.Threads, "")
+}
+
+func downloadXHSVideoWithSessionAndCaption(ctx context.Context, index int, videoURL, title, caption, author, format, quality, savePath string, noPlaylist bool, threads int, cookieHeader string, noteURL ...string) error {
+	started := time.Now()
+	if err := downloadXHSVideoWithSession(ctx, index, videoURL, title, author, format, quality, savePath, noPlaylist, threads, cookieHeader, noteURL...); err != nil {
+		return err
+	}
+	if err := appendLatestVideoCaption(savePath, author, title, caption, started); err != nil {
+		LogWarning("[XHS] write video caption failed: %v", err)
+	}
+	return nil
 }
 
 func downloadXHSVideoWithSession(ctx context.Context, index int, videoURL, title, author, format, quality, savePath string, noPlaylist bool, threads int, cookieHeader string, noteURL ...string) error {
@@ -78,19 +89,13 @@ func downloadXHSVideoWithSession(ctx context.Context, index int, videoURL, title
 		return fmt.Errorf("xhs: invalid video URL: %w", err)
 	}
 
-	targetDir := savePath
-	if author != "" {
-		targetDir = filepath.Join(targetDir, sanitizeFolderName(author))
-	}
-	if err := os.MkdirAll(targetDir, 0o755); err != nil {
-		return classifyXHSError("filesystem", fmt.Errorf("create XHS output directory: %w", err))
-	}
-
+	// The shared yt-dlp path prepares the creator folder from metadata. Do not
+	// pre-create an author folder here, otherwise XHS would become author/author.
 	var downloadErr error
 	if len(noteURL) > 0 && extractXHSSession(cookieHeader) != "" {
-		downloadErr = downloadXHSWithSessionFallback(ctx, index, videoURL, format, quality, targetDir, noPlaylist, threads, extractXHSSession(cookieHeader), noteURL[0])
+		downloadErr = downloadXHSWithSessionFallback(ctx, index, videoURL, format, quality, savePath, noPlaylist, threads, extractXHSSession(cookieHeader), noteURL[0])
 	} else {
-		downloadErr = downloadVideoWithXHSSession(ctx, index, videoURL, format, quality, targetDir, noPlaylist, threads, cookieHeader, true, noteURL...)
+		downloadErr = downloadVideoWithXHSSession(ctx, index, videoURL, format, quality, savePath, noPlaylist, threads, cookieHeader, true, noteURL...)
 	}
 	if downloadErr != nil {
 		return fmt.Errorf("xhs video download failed: %w", downloadErr)
@@ -118,13 +123,11 @@ func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, opti
 	})
 
 	if routeXHSNote(info.Type) == xhsDownloadYTDLP {
-		return downloadXHSVideoWithSession(ctx, index, info.VideoURL, info.Title, info.Author, "MP4", "Best", options.SavePath, true, options.Threads, galleryVideoCookieHeader(fetchOptions), url)
+		return downloadXHSVideoWithSessionAndCaption(ctx, index, info.VideoURL, info.Title, info.Caption, info.Author, "MP4", "Best", options.SavePath, true, options.Threads, galleryVideoCookieHeader(fetchOptions), url)
 	}
 
-	targetDir := options.SavePath
-	if info.Author != "" {
-		targetDir = filepath.Join(options.SavePath, sanitizeFolderName(info.Author))
-	}
+	creator := mediaCreator(info.Author)
+	targetDir := filepath.Join(options.SavePath, creator, mediaTitle(info.Title))
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return fmt.Errorf("create xhs output dir failed: %w", err)
 	}
@@ -171,6 +174,7 @@ func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, opti
 	client := &http.Client{Timeout: fetchOptions.Timeout}
 
 	var failedCount int
+	var downloadedFiles []string
 	for i, assetURL := range urls {
 		targetPath := filepath.Join(targetDir, buildXHSFilename(i+1, assetURL))
 
@@ -186,6 +190,8 @@ func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, opti
 			continue // ← tải tiếp ảnh tiếp theo
 		}
 
+		downloadedFiles = append(downloadedFiles, filepath.Base(targetPath))
+
 		// Chỉ emit progress khi tải thành công
 		runtime.EventsEmit(ctx, "gallery-progress", map[string]interface{}{
 			"index":      index,
@@ -197,6 +203,11 @@ func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, opti
 
 	if failedCount > 0 {
 		LogError("[XHS] %d/%d assets failed", failedCount, len(urls))
+	}
+	if len(downloadedFiles) > 0 {
+		if err := appendCaptionRecord(targetDir, imageCaptionFiles(downloadedFiles), info.Title, info.Caption); err != nil {
+			return fmt.Errorf("write captions.txt: %w", err)
+		}
 	}
 
 	runtime.EventsEmit(ctx, "gallery-progress", map[string]interface{}{

@@ -44,7 +44,8 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 
 	args := []string{
 		"--destination", options.SavePath,
-		"-o", `directory=["{username|user|uploader|creator|title|category}"]`,
+		"-o", `directory=["{username|user|uploader|creator|category}", "{title|id}"]`,
+		"-o", `filename="image-{num}.{extension}"`,
 	}
 
 	if options.UgoiraToWebm {
@@ -119,6 +120,12 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 	titleEmitted := false
 
 	preflight := getGalleryTitle(ctx, gallerydlPath, resolvedURL, userAgent, cookieArgs)
+	if preflight.Creator == "" {
+		preflight.Creator = "creator1"
+	}
+	if preflight.Title == "" {
+		preflight.Title = preflight.Creator
+	}
 	if preflight.Title != "" {
 		runtime.EventsEmit(ctx, "gallery-title", map[string]interface{}{
 			"index": index,
@@ -154,6 +161,8 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 	var stderrMu sync.Mutex
 	totalCount := totalCountFromPreflight
 	LogInfo("[GDL] Pre-flight count: %d", totalCount)
+	var downloadedPaths []string
+	var downloadedPathsMu sync.Mutex
 	var totalCountMu sync.Mutex
 	stderrDone := make(chan struct{})
 	go func() {
@@ -186,6 +195,9 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 		}
 
 		// Đây là filepath thật
+		downloadedPathsMu.Lock()
+		downloadedPaths = append(downloadedPaths, line)
+		downloadedPathsMu.Unlock()
 		if !titleEmitted {
 			if derivedTitle := extractGalleryTitleFromPath(line, options.SavePath); derivedTitle != "" {
 				runtime.EventsEmit(ctx, "gallery-title", map[string]interface{}{
@@ -230,6 +242,22 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 			"speed":      fmt.Sprintf("Downloaded %d files", count),
 			"eta":        "Done",
 		})
+	}
+
+	if len(downloadedPaths) > 0 {
+		downloadedPathsMu.Lock()
+		paths := append([]string(nil), downloadedPaths...)
+		downloadedPathsMu.Unlock()
+		byDir := map[string][]string{}
+		for _, p := range paths {
+			d := filepath.Dir(p)
+			byDir[d] = append(byDir[d], filepath.Base(p))
+		}
+		for dir, files := range byDir {
+			if err := appendCaptionRecord(dir, imageCaptionFiles(files), preflight.Title, preflight.Caption); err != nil {
+				return fmt.Errorf("write caption.txt: %w", err)
+			}
+		}
 	}
 
 	if err := cmd.Wait(); err != nil {
@@ -309,8 +337,10 @@ func sanitizeFolderName(name string) string {
 }
 
 type GalleryPreflightInfo struct {
-	Title string
-	Count int
+	Creator string
+	Title   string
+	Caption string
+	Count   int
 }
 
 // getGalleryTitle chạy gallery-dl --print để lấy title/username nhanh (không tải file).
@@ -380,14 +410,20 @@ func getGalleryTitle(ctx context.Context, gallerydlPath, url, userAgent string, 
 		// Lấy title/username
 		for _, key := range []string{"uploader", "user", "username", "creator", "channel", "fullname"} {
 			if v, ok := item[key].(string); ok && v != "" {
-				info.Title = v
+				info.Creator = v
 				break
 			}
 		}
-		if t, ok := item["title"].(string); ok && t != "" && info.Title != "" {
-			info.Title = info.Title + " | " + t
-		} else if t, ok := item["description"].(string); ok && t != "" && info.Title != "" {
-			info.Title = info.Title + " | " + t
+		if t, ok := item["title"].(string); ok && t != "" {
+			info.Title = t
+		}
+		if c, ok := item["description"].(string); ok && c != "" {
+			info.Caption = c
+		} else if c, ok := item["caption"].(string); ok && c != "" {
+			info.Caption = c
+		}
+		if info.Title == "" {
+			info.Title = info.Creator
 		}
 
 		break // chỉ cần item đầu tiên

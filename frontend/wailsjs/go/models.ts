@@ -173,6 +173,8 @@ export namespace main {
 	}
 	export class VideoInfo {
 	    title: string;
+	    caption: string;
+	    creator: string;
 	    thumbnail: string;
 	    id: string;
 	
@@ -183,6 +185,8 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.title = source["title"];
+	        this.caption = source["caption"];
+	        this.creator = source["creator"];
 	        this.thumbnail = source["thumbnail"];
 	        this.id = source["id"];
 	    }

@@ -31,6 +31,7 @@ import (
 type NoteInfo struct {
 	NoteID    string   // ID bài viết
 	Title     string   // Tiêu đề
+	Caption   string   // Nội dung mô tả/caption
 	Author    string   // Tên tác giả
 	Type      string   // "image" | "video"
 	ImageURLs []string // CDN URLs của từng ảnh trong carousel (đã sẵn sàng tải)
@@ -539,6 +540,7 @@ func balancedJSONObject(input string, start int) (string, error) {
 type noteDetailJSON struct {
 	NoteID    string `json:"noteId"`
 	Title     string `json:"title"`
+	Desc      string `json:"desc"`
 	Type      string `json:"type"` // "normal" = ảnh cuộn, "video" = video
 	ImageList []struct {
 		URLDefault string `json:"urlDefault"`
@@ -687,10 +689,11 @@ func buildInfo(note *noteDetailJSON, noteID, format string) *NoteInfo {
 		format = "auto"
 	}
 	info := &NoteInfo{
-		NoteID: noteID,
-		Title:  note.Title,
-		Author: note.User.Nickname,
-		Type:   "image",
+		NoteID:  noteID,
+		Title:   note.Title,
+		Caption: note.Desc,
+		Author:  note.User.Nickname,
+		Type:    "image",
 	}
 
 	// Bài video

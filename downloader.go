@@ -26,6 +26,8 @@ import (
 
 type VideoInfo struct {
 	Title     string `json:"title"`
+	Caption   string `json:"caption"`
+	Creator   string `json:"creator"`
 	Thumbnail string `json:"thumbnail"`
 	ID        string `json:"id"`
 }
@@ -576,6 +578,16 @@ func downloadVideoWithXHSSessionFormat(ctx context.Context, index int, url, form
 	} else if !metadataKnown {
 		info, _ = GetVideoMetadata(ctx, metadataURL)
 	}
+	manifestCreator := ""
+	if info != nil {
+		manifestCreator = info.Creator
+	}
+	dir, manifestFile, cleanupReservation, prepErr := prepareVideoMediaFolder(savePath, manifestCreator)
+	if prepErr != nil {
+		return fmt.Errorf("prepare media output folder: %w", prepErr)
+	}
+	defer cleanupReservation()
+	savePath = dir
 	if info != nil {
 		runtime.EventsEmit(ctx, "video-info", map[string]interface{}{
 			"index":     index,
@@ -815,6 +827,9 @@ func downloadVideoWithXHSSessionFormat(ctx context.Context, index int, url, form
 
 	// If we have a final file path, emit it as complete
 	if finalFilePath != "" {
+		if info != nil && manifestFile != "" {
+			_ = captionFileRecord(filepath.Dir(finalFilePath), manifestFile+filepath.Ext(finalFilePath), info.Title, info.Caption)
+		}
 		runtime.EventsEmit(ctx, "download-complete", map[string]interface{}{
 			"index":    index,
 			"filePath": finalFilePath,
@@ -920,13 +935,18 @@ func buildDownloadArgs(ctx context.Context, url, format, quality, savePath, ffmp
 		"--windows-filenames",
 	)
 
-	// Playlist mode và output template
+	// Playlist mode và output template. Metadata-aware callers reserve a
+	// creator folder and a compact video-N filename before invoking yt-dlp.
 	playlistFlag := "--no-playlist"
 	outputTemplate := filepath.Join(savePath, "%(title)s [%(id)s].%(ext)s")
-
-	if !noPlaylist {
+	if reserved := takeVideoOutputTemplate(savePath); reserved != "" {
+		outputTemplate = reserved
+	}
+	if !noPlaylist && outputTemplate == filepath.Join(savePath, "%(title)s [%(id)s].%(ext)s") {
 		playlistFlag = "--yes-playlist"
 		outputTemplate = filepath.Join(savePath, "%(playlist_title)s", "%(playlist_index)s - %(title)s [%(id)s].%(ext)s")
+	} else if !noPlaylist {
+		playlistFlag = "--yes-playlist"
 	}
 
 	args = append(args, playlistFlag, "-o", outputTemplate)
@@ -1094,6 +1114,14 @@ func getVideoMetadataWithCookieArgs(ctx context.Context, rawURL string, cookieAr
 	}
 
 	title, _ := data["title"].(string)
+	caption, _ := data["description"].(string)
+	creator, _ := data["uploader"].(string)
+	if creator == "" {
+		creator, _ = data["channel"].(string)
+	}
+	if creator == "" {
+		creator, _ = data["creator"].(string)
+	}
 	videoID, _ := data["id"].(string)
 	thumbnailURL, _ := data["thumbnail"].(string)
 
@@ -1113,6 +1141,8 @@ func getVideoMetadataWithCookieArgs(ctx context.Context, rawURL string, cookieAr
 
 	return &VideoInfo{
 		Title:     title,
+		Caption:   caption,
+		Creator:   creator,
 		Thumbnail: dataURL,
 		ID:        videoID,
 	}, nil
