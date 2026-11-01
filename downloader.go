@@ -114,20 +114,22 @@ func normalizeVideoInputURL(rawURL string) (string, error) {
 	// FE có thể gửi URL đã bị escape theo dạng https:\/\/... hoặc có
 	// backslash trước query separator. yt-dlp cần URL thật, không phải chuỗi escape.
 	rawURL = strings.ReplaceAll(rawURL, "\\", "")
-	if isXHSShortLink(rawURL) {
-		manager.mu.RLock()
-		selectedBrowser := manager.config.SelectedBrowser
-		manager.mu.RUnlock()
-		// Resolve only XHS short paths. Normal XHS/RedNote URLs keep the
-		// existing canonicalization path unchanged.
-		rawURL = ResolveShortURL(rawURL, GetUserAgent(selectedBrowser))
-	}
+	// Keep XHS short links intact until the dedicated XHS parser receives the
+	// browser web_session cookie. Resolving here loses the share redirect
+	// context and can turn /o/... into an invalid canonical URL, which also
+	// drops Author/Creator metadata for both Video and Images routes.
 	parsed, err := urlpkg.ParseRequestURI(rawURL)
 	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		if err == nil {
 			err = fmt.Errorf("URL must use http or https and include a hostname")
 		}
 		return "", fmt.Errorf("invalid video URL: %w", err)
+	}
+	// Short-link paths are resolved by the authenticated XHS parser. Never
+	// rewrite /o/... or /s/... onto the canonical host because that produces
+	// an invalid note URL and loses the redirect metadata used for Author.
+	if isXHSShortLink(rawURL) {
+		return parsed.String(), nil
 	}
 	if isXHSNoteURL(rawURL) {
 		return canonicalizeXHSVideoPageURL(rawURL)
@@ -592,7 +594,16 @@ func downloadVideoWithXHSSessionFormatMetadata(ctx context.Context, index int, u
 	if prepErr != nil {
 		return fmt.Errorf("prepare media output folder: %w", prepErr)
 	}
-	defer cleanupReservation()
+	downloadSucceeded := false
+	defer func() {
+		cleanupReservation()
+		if !downloadSucceeded {
+			cleanupFailedVideoOutput(dir, manifestFile)
+		}
+		// Remove only empty output folders after a failed download; preserve
+		// creator folders that already contain other successful media.
+		cleanupEmptyMediaDir(dir)
+	}()
 	savePath = dir
 	if info != nil {
 		runtime.EventsEmit(ctx, "video-info", map[string]interface{}{
@@ -831,16 +842,22 @@ func downloadVideoWithXHSSessionFormatMetadata(ctx context.Context, index int, u
 		return fmt.Errorf("download failed: %v", err)
 	}
 
-	// If we have a final file path, emit it as complete
-	if finalFilePath != "" {
-		if info != nil && manifestFile != "" {
-			_ = captionFileRecord(filepath.Dir(finalFilePath), manifestFile+filepath.Ext(finalFilePath), info.Title, info.Caption)
-		}
-		runtime.EventsEmit(ctx, "download-complete", map[string]interface{}{
-			"index":    index,
-			"filePath": finalFilePath,
-		})
+	if finalFilePath == "" {
+		return fmt.Errorf("download completed without a media output file")
 	}
+	if _, statErr := os.Stat(finalFilePath); statErr != nil {
+		return fmt.Errorf("download output file is missing: %w", statErr)
+	}
+	downloadSucceeded = true
+
+	// The output file exists, so the reserved folder is now a real download.
+	if info != nil && manifestFile != "" {
+		_ = captionFileRecord(filepath.Dir(finalFilePath), manifestFile+filepath.Ext(finalFilePath), info.Title, info.Caption)
+	}
+	runtime.EventsEmit(ctx, "download-complete", map[string]interface{}{
+		"index":    index,
+		"filePath": finalFilePath,
+	})
 
 	return nil
 }

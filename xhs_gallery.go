@@ -134,6 +134,12 @@ func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, opti
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return fmt.Errorf("create xhs output dir failed: %w", err)
 	}
+	defer func() {
+		// If every asset fails, remove the empty title/creator folders. Keep
+		// folders containing at least one successfully downloaded asset.
+		cleanupEmptyMediaDir(targetDir)
+		cleanupEmptyMediaDir(filepath.Dir(targetDir))
+	}()
 
 	var urls []string
 	switch info.Type {

@@ -25,16 +25,18 @@ type GalleryInfo struct {
 
 // DownloadGalleryWithOpts downloads images using gallery-dl with custom options
 func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options GalleryDownloadOptions) error {
-	// Resolve short URLs before passing to gallery-dl
+	// Keep XHS short links intact until DownloadXiaohongshuGallery obtains
+	// the browser web_session and resolves them through the authenticated
+	// parser. Early resolution loses Author/Creator metadata for Images.
+	if IsXiaohongshu(url) {
+		return DownloadXiaohongshuGallery(ctx, index, url, options)
+	}
+
 	manager.mu.RLock()
 	selectedBrowser := manager.config.SelectedBrowser
 	manager.mu.RUnlock()
 	userAgent := GetUserAgent(selectedBrowser)
 	resolvedURL := ResolveShortURL(url, userAgent)
-
-	if IsXiaohongshu(resolvedURL) {
-		return DownloadXiaohongshuGallery(ctx, index, resolvedURL, options)
-	}
 
 	gallerydlPath := getResourcePath("gallery-dl")
 

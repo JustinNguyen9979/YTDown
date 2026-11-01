@@ -77,13 +77,13 @@ func TestCanonicalizeXHSVideoPageURL(t *testing.T) {
 	}
 }
 
-func TestNormalizeVideoInputURLCleansEscapesAndCanonicalizesRednote(t *testing.T) {
-	input := `https:\/\/www.rednote.com\/discovery\/item\/note123\\?source=share\\&xsec_token=synthetic`
+func TestNormalizeVideoInputURLCleansEscapesAndKeepsXHSShortLinkForAuthenticatedParser(t *testing.T) {
+	input := `https:\/\/xhslink.com\/o\/AHiqLuW5rvi`
 	got, err := normalizeVideoInputURL(input)
 	if err != nil {
 		t.Fatalf("normalizeVideoInputURL() error = %v", err)
 	}
-	want := "https://www.xiaohongshu.com/discovery/item/note123?source=share&xsec_token=synthetic"
+	want := "https://xhslink.com/o/AHiqLuW5rvi"
 	if got != want {
 		t.Fatalf("normalizeVideoInputURL() = %q, want %q", got, want)
 	}

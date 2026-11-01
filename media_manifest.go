@@ -65,6 +65,32 @@ func captionFileRecord(dir, fileBase, title, caption string) error {
 	return appendCaptionRecord(dir, fileBase, title, caption)
 }
 
+func cleanupEmptyMediaDir(dir string) {
+	if dir == "" {
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 0 {
+		return
+	}
+	_ = os.Remove(dir)
+}
+
+func cleanupFailedVideoOutput(dir, fileBase string) {
+	if dir == "" || fileBase == "" {
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), fileBase+".") || strings.HasPrefix(entry.Name(), ".ytdown-") {
+			_ = os.Remove(filepath.Join(dir, entry.Name()))
+		}
+	}
+}
+
 func appendLatestVideoCaption(root, creator, title, caption string, since time.Time) error {
 	creatorDir := filepath.Join(root, mediaCreator(creator))
 	var latest string
