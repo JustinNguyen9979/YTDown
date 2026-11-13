@@ -185,6 +185,42 @@ function truncateMiddle(fullStr, strLen, separator) {
            fullStr.substr(fullStr.length - backChars);
 }
 
+function trimSharedURL(url) {
+    let cleaned = url.replace(/[.,;:!?，。！？；：'"“”‘’]+$/gu, '');
+    const bracketPairs = [['(', ')'], ['[', ']'], ['{', '}']];
+
+    for (const [open, close] of bracketPairs) {
+        while (cleaned.endsWith(close) &&
+               cleaned.split(close).length > cleaned.split(open).length) {
+            cleaned = cleaned.slice(0, -1);
+        }
+    }
+
+    return cleaned;
+}
+
+function extractSharedURLs(text) {
+    const matches = text.match(/https?:\/\/[^\s<>]+/giu) || [];
+    return matches.map(trimSharedURL).filter(Boolean);
+}
+
+function setupURLPasteCleanup(textarea) {
+    if (!textarea) return;
+
+    textarea.addEventListener('paste', (event) => {
+        const pasted = event.clipboardData?.getData('text') || '';
+        const urls = extractSharedURLs(pasted);
+        if (urls.length === 0) return;
+
+        event.preventDefault();
+        const cleaned = urls.join('\n');
+        const start = textarea.selectionStart ?? textarea.value.length;
+        const end = textarea.selectionEnd ?? start;
+        textarea.setRangeText(cleaned, start, end, 'end');
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+}
+
 // Initialize app
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initApp);
@@ -511,6 +547,8 @@ function setupGalleryTab() {
     const cookieAddedBadge = document.getElementById('galleryCookieAddedBadge');
 
     if (!clearBtn || !startBtn || !urlsTextarea || !savePathInput) return;
+
+    setupURLPasteCleanup(urlsTextarea);
 
     // --- Media Formats Dynamic Rendering ---
     const mediaFormats = [
@@ -1472,6 +1510,8 @@ function setupBatchTab() {
     const confirmCookieBtn = document.getElementById('confirmCookieBtn');
 
     if (!clearBtn || !startBtn || !pauseBtn || !cancelBtn) return;
+
+    setupURLPasteCleanup(textarea);
 
     if (threadsSelect) {
         threadsSelect.value = String(state.batchThreads);
