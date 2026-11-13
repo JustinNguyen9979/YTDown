@@ -272,6 +272,13 @@ func DownloadGalleryWithOpts(ctx context.Context, index int, url string, options
 		return fmt.Errorf("gallery download failed: %v", err)
 	}
 
+	downloadedAt := time.Now()
+	for _, path := range downloadedPaths {
+		if err := sanitizeDownloadedImage(path, downloadedAt); err != nil {
+			return fmt.Errorf("sanitize downloaded image %s: %w", filepath.Base(path), err)
+		}
+	}
+
 	runtime.EventsEmit(ctx, "gallery-complete", map[string]interface{}{
 		"index":    index,
 		"filePath": options.SavePath,

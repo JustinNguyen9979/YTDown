@@ -848,9 +848,12 @@ func downloadVideoWithXHSSessionFormatMetadata(ctx context.Context, index int, u
 	if _, statErr := os.Stat(finalFilePath); statErr != nil {
 		return fmt.Errorf("download output file is missing: %w", statErr)
 	}
+	if err := sanitizeDownloadedVideo(ctx, finalFilePath); err != nil {
+		return fmt.Errorf("sanitize downloaded media: %w", err)
+	}
 	downloadSucceeded = true
 
-	// The output file exists, so the reserved folder is now a real download.
+	// The output file exists and was sanitized, so the reserved folder is now a real download.
 	if info != nil && manifestFile != "" {
 		_ = captionFileRecord(filepath.Dir(finalFilePath), manifestFile+filepath.Ext(finalFilePath), info.Title, info.Caption)
 	}

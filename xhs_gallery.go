@@ -198,6 +198,16 @@ func DownloadXiaohongshuGallery(ctx context.Context, index int, url string, opti
 			})
 			continue // ← tải tiếp ảnh tiếp theo
 		}
+		if err := sanitizeDownloadedImage(targetPath, time.Now()); err != nil {
+			LogError("[XHS] Asset %d sanitize failed: %v", i+1, err)
+			failedCount++
+			runtime.EventsEmit(ctx, "gallery-asset-warning", map[string]interface{}{
+				"index":    index,
+				"assetNum": i + 1,
+				"error":    err.Error(),
+			})
+			continue
+		}
 
 		downloadedFiles = append(downloadedFiles, filepath.Base(targetPath))
 
